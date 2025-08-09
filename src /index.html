@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Facebook Group Scraper</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            padding: 20px;
+            text-align: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .header h1 {
+            color: white;
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .header p {
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 14px;
+        }
+
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .controls {
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.05);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .url-input {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .url-input input {
+            flex: 1;
+            padding: 12px 16px;
+            border: none;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.9);
+            font-size: 14px;
+        }
+
+        .url-input input::placeholder {
+            color: #666;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            white-space: nowrap;
+        }
+
+        .btn-primary {
+            background: #4CAF50;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #45a049;
+            transform: translateY(-1px);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .btn-contact {
+            background: #0088cc;
+            color: white;
+            font-size: 12px;
+            padding: 8px 16px;
+        }
+
+        .btn-contact:hover {
+            background: #006699;
+            transform: translateY(-1px);
+        }
+
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: white;
+            font-size: 14px;
+        }
+
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #f44336;
+            animation: pulse 2s infinite;
+        }
+
+        .status-indicator.active {
+            background: #4CAF50;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        .browser-container {
+            flex: 1;
+            background: white;
+            border-radius: 12px 12px 0 0;
+            overflow: hidden;
+            margin: 0 20px 20px 20px;
+            box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.1);
+        }
+
+        .browser-header {
+            background: #f5f5f5;
+            padding: 12px 16px;
+            border-bottom: 1px solid #ddd;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .browser-dots {
+            display: flex;
+            gap: 6px;
+        }
+
+        .browser-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+
+        .browser-dot.red { background: #ff5f57; }
+        .browser-dot.yellow { background: #ffbd2e; }
+        .browser-dot.green { background: #28ca42; }
+
+        .browser-url {
+            flex: 1;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-size: 12px;
+            color: #666;
+            margin-left: 16px;
+        }
+
+        #browser {
+            width: 100%;
+            height: 100%;
+            border: none;
+            min-height: 500px;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 40px;
+            color: rgba(255, 255, 255, 0.8);
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-top: 3px solid white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 16px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .stats {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 12px 20px;
+            color: white;
+            font-size: 14px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .member-count {
+            font-weight: 600;
+            font-size: 16px;
+            color: #4CAF50;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🚀 Facebook Group Scraper</h1>
+        <p>Экспорт участников групп Facebook в один клик</p>
+    </div>
+
+    <div class="main-content">
+        <div class="controls">
+            <div class="url-input">
+                <input type="text" id="groupUrl" placeholder="Вставьте ссылку на группу Facebook (например: https://www.facebook.com/groups/yourgroup)">
+                <button class="btn btn-primary" onclick="loadGroup()">Загрузить группу</button>
+                <button class="btn btn-contact" onclick="openTelegram()">📱 Связь</button>
+                <button class="btn btn-secondary" onclick="injectScript()">Запустить скрипт</button>
+            </div>
+            
+            <div class="status">
+                <div class="status-indicator" id="statusIndicator"></div>
+                <span id="statusText">Ожидание загрузки группы</span>
+            </div>
+        </div>
+
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>Загружаем Facebook...</p>
+        </div>
+
+        <div class="browser-container">
+            <div class="browser-header">
+                <div class="browser-dots">
+                    <div class="browser-dot red"></div>
+                    <div class="browser-dot yellow"></div>
+                    <div class="browser-dot green"></div>
+                </div>
+                <input type="text" class="browser-url" id="currentUrl" readonly value="facebook.com">
+            </div>
+            <webview id="browser" src="https://www.facebook.com"></webview>
+        </div>
+
+        <div class="stats">
+            <div>
+                <span>Найдено участников: </span>
+                <span class="member-count" id="memberCount">0</span>
+            </div>
+            <button class="btn btn-primary" onclick="downloadCSV()" style="display: none;" id="downloadBtn">
+                📥 Скачать CSV
+            </button>
+        </div>
+    </div>
+
+    <script>
+        let webview;
+        let memberData = [];
+        let scriptInjected = false;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            webview = document.getElementById('browser');
+            setupWebview();
+
+            // Автоматически загружаем Facebook при старте
+            updateStatus('Загружаем Facebook...', false);
+            showLoading(true);
+        });
+
+        function setupWebview() {
+            webview.addEventListener('dom-ready', () => {
+                console.log('WebView готов');
+                showLoading(false);
+                updateStatus('Facebook загружен. Откройте нужную группу', true);
+                
+                // Слушаем события от внедренного скрипта
+                webview.addEventListener('console-message', (e) => {
+                    console.log('WebView console:', e.message);
+                });
+                
+                // Обработка custom событий из webview
+                webview.executeJavaScript(`
+                    document.addEventListener('memberUpdate', (e) => {
+                        console.log('Member count updated:', e.detail.count);
+                    });
+                `);
+            });
+
+            webview.addEventListener('did-navigate', (event) => {
+                document.getElementById('currentUrl').value = event.url;
+                console.log('Переход на:', event.url);
+                
+                if (event.url.includes('/groups/')) {
+                    updateStatus('Страница группы загружена. Можно запускать скрипт', true);
+                }
+            });
+
+            webview.addEventListener('did-fail-load', (event) => {
+                console.error('Ошибка загрузки:', event);
+                updateStatus('Ошибка загрузки страницы', false);
+                showLoading(false);
+            });
+        }
+
+        function loadGroup() {
+            const url = document.getElementById('groupUrl').value.trim();
+            if (!url) {
+                alert('Пожалуйста, введите ссылку на группу');
+                return;
+            }
+
+            if (!url.includes('facebook.com/groups/')) {
+                alert('Пожалуйста, введите правильную ссылку на группу Facebook');
+                return;
+            }
+
+            updateStatus('Загружаем группу...', false);
+            showLoading(true);
+            webview.src = url;
+        }
+
+        async function openTelegram() {
+            try {
+                // Открываем ссылку на Telegram через главный процесс
+                const result = await window.electronAPI.openExternal('https://t.me/Userspoi');
+                if (!result.success) {
+                    console.error('Ошибка открытия ссылки:', result.error);
+                    // Fallback - пытаемся открыть через window.open
+                    window.open('https://t.me/Userspoi', '_blank');
+                }
+            } catch (error) {
+                console.error('Ошибка:', error);
+                // Fallback - пытаемся открыть через window.open
+                window.open('https://t.me/Userspoi', '_blank');
+            }
+        }
+
+        async function injectScript() {
+            try {
+                // Ждем полной загрузки страницы
+                await new Promise(resolve => {
+                    if (webview.getURL().includes('facebook.com')) {
+                        resolve();
+                    } else {
+                        webview.addEventListener('did-navigate', () => {
+                            if (webview.getURL().includes('facebook.com')) {
+                                setTimeout(resolve, 2000); // Даем время на загрузку
+                            }
+                        });
+                    }
+                });
+
+                const script = await window.electronAPI.getScript();
+                
+                // Внедряем скрипт
+                await webview.executeJavaScript(`
+                    try {
+                        // Очищаем предыдущие данные
+                        window.members_list = [["Profile Id","Full Name","ProfileLink","Bio","Image Src","Groupe Id","Group Joining Text","Profile Type"]];
+                        
+                        // Удаляем предыдущие кнопки
+                        const existingOverlay = document.querySelector('[style*="position: fixed"][style*="z-index: 10"]');
+                        if (existingOverlay) {
+                            existingOverlay.remove();
+                        }
+                        
+                        // Выполняем основной скрипт
+                        ${script}
+                        
+                        // Мониторинг изменений
+                        let lastCount = 0;
+                        const updateInterval = setInterval(() => {
+                            if (window.members_list && window.members_list.length > 1) {
+                                const currentCount = window.members_list.length - 1;
+                                if (currentCount !== lastCount) {
+                                    lastCount = currentCount;
+                                    // Обновляем счетчик через DOM события
+                                    const event = new CustomEvent('memberUpdate', { 
+                                        detail: { 
+                                            count: currentCount,
+                                            data: window.members_list 
+                                        } 
+                                    });
+                                    document.dispatchEvent(event);
+                                }
+                            }
+                        }, 2000);
+                        
+                        console.log('Скрипт успешно внедрен!');
+                        'SUCCESS';
+                    } catch (error) {
+                        console.error('Ошибка выполнения скрипта:', error);
+                        throw error;
+                    }
+                `);
+
+                scriptInjected = true;
+                updateStatus('Скрипт запущен! Прокручивайте список участников', true);
+                
+            } catch (error) {
+                console.error('Ошибка внедрения скрипта:', error);
+                updateStatus('Ошибка запуска скрипта. Убедитесь что страница загружена', false);
+                alert('Ошибка запуска скрипта:\n' + error.message + '\n\nУбедитесь что:\n1. Страница группы полностью загружена\n2. Вы вошли в Facebook\n3. Находитесь на странице группы');
+            }
+        }
+
+        function updateMemberCount(count) {
+            document.getElementById('memberCount').textContent = count;
+            if (count > 0) {
+                document.getElementById('downloadBtn').style.display = 'block';
+            }
+        }
+
+        async function downloadCSV() {
+            try {
+                // Получаем данные из webview
+                const data = await webview.executeJavaScript('window.members_list');
+                
+                if (!data || data.length <= 1) {
+                    alert('Нет данных для экспорта. Убедитесь, что скрипт запущен и собрал участников.');
+                    return;
+                }
+
+                // Конвертируем в CSV
+                const csvContent = data.map(row => 
+                    row.map(field => {
+                        const stringField = field == null ? '' : String(field);
+                        // Экранируем кавычки и добавляем кавычки если есть запятые или переносы
+                        const escapedField = stringField.replace(/"/g, '""');
+                        return /[",\n]/.test(escapedField) ? `"${escapedField}"` : escapedField;
+                    }).join(',')
+                ).join('\n');
+
+                // Сохраняем через Electron API
+                const result = await window.electronAPI.saveCSV(csvContent);
+                
+                if (result.success) {
+                    updateStatus(`CSV файл сохранен: ${result.path}`, true);
+                    alert(`Файл успешно сохранен!\nПуть: ${result.path}\nЭкспортировано записей: ${data.length - 1}`);
+                } else if (result.cancelled) {
+                    updateStatus('Сохранение отменено', true);
+                } else {
+                    throw new Error(result.error);
+                }
+                
+            } catch (error) {
+                console.error('Ошибка экспорта:', error);
+                updateStatus('Ошибка при сохранении файла', false);
+                alert('Ошибка при сохранении файла: ' + error.message);
+            }
+        }
+
+        function updateStatus(text, isActive) {
+            document.getElementById('statusText').textContent = text;
+            const indicator = document.getElementById('statusIndicator');
+            if (isActive) {
+                indicator.classList.add('active');
+            } else {
+                indicator.classList.remove('active');
+            }
+        }
+
+        function showLoading(show) {
+            const loading = document.getElementById('loading');
+            if (show) {
+                loading.style.display = 'block';
+            } else {
+                loading.style.display = 'none';
+            }
+        }
+
+        // Отслеживаем обновления количества участников через postMessage
+        window.addEventListener('message', (event) => {
+            if (event.data.type === 'MEMBER_COUNT_UPDATE') {
+                updateMemberCount(event.data.count);
+                memberData = event.data.data;
+            }
+        });
+    </script>
+</body>
+</html>
