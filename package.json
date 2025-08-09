@@ -1,0 +1,45 @@
+{
+  "name": "facebook-group-scraper",
+  "version": "1.0.0",
+  "description": "Facebook Group Members Scraper для macOS",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder",
+    "build-mac": "electron-builder --mac",
+    "build-win": "electron-builder --win",
+    "build-all": "electron-builder --mac --win",
+    "dev": "electron . --dev"
+  },
+  "keywords": ["facebook", "scraper", "electron", "macos"],
+  "author": "Your Name",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^27.0.0",
+    "electron-builder": "^24.6.4"
+  },
+  "build": {
+    "appId": "com.yourcompany.facebook-group-scraper",
+    "productName": "FB Group Scraper",
+    "directories": {
+      "output": "dist"
+    },
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["x64", "arm64"]
+        }
+      ]
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ]
+    }
+  }
+}
