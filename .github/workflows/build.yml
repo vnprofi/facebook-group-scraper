@@ -1,0 +1,45 @@
+name: Build Electron App
+
+on:
+  push:
+    branches:
+      - '**'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build (all)
+        env:
+          ELECTRON_DISABLE_SECURITY_WARNINGS: true
+        run: npx electron-builder --mac --win --publish never
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macOS-build
+          path: |
+            dist/*.dmg
+            dist/*.zip
+          if-no-files-found: ignore
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: |
+            dist/*.exe
+            dist/*.nsis.7z
+          if-no-files-found: ignore
