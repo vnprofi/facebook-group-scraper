@@ -140,16 +140,6 @@ window.members_list=window.members_list||[["Profile Id","Full Name","ProfileLink
     var scrollIntervalMs = 900;
     var maxScrollSteps = 2000;
 
-    function tryExpandButtons(){
-      var candidates = Array.from(document.querySelectorAll('a,button,div[role="button"],span'));
-      candidates.forEach(function(el){
-        var text = (el.innerText || '').trim();
-        if (/see more|show more|показать еще|показать ещё|еще|ещё/i.test(text)) {
-          try { el.click(); } catch(_) {}
-        }
-      });
-    }
-
     if (window.__fbAutoScrollTimer) clearInterval(window.__fbAutoScrollTimer);
     window.__fbAutoScrollTimer = setInterval(function(){
       var currentHeight = document.body.scrollHeight;
@@ -157,7 +147,6 @@ window.members_list=window.members_list||[["Profile Id","Full Name","ProfileLink
       lastScrollHeight = currentHeight;
 
       window.scrollBy({ top: scrollStep, left: 0, behavior: 'smooth' });
-      tryExpandButtons();
       totalScrollSteps++;
 
       if (idleIterations >= maxIdleIterations || totalScrollSteps >= maxScrollSteps) {
