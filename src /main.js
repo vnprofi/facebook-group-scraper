@@ -129,6 +129,47 @@ function main(){buildCTABtn();var e=XMLHttpRequest.prototype.send;XMLHttpRequest
 
 window.members_list=window.members_list||[["Profile Id","Full Name","ProfileLink","Bio","Image Src","Groupe Id","Group Joining Text","Profile Type"]],main();
 
+/* Auto-scroll to load more members */
+(function(){
+  try {
+    var maxIdleIterations = 8;
+    var idleIterations = 0;
+    var lastScrollHeight = 0;
+    var totalScrollSteps = 0;
+    var scrollStep = Math.max(400, Math.floor(window.innerHeight * 0.8));
+    var scrollIntervalMs = 900;
+    var maxScrollSteps = 2000;
+
+    function tryExpandButtons(){
+      var candidates = Array.from(document.querySelectorAll('a,button,div[role="button"],span'));
+      candidates.forEach(function(el){
+        var text = (el.innerText || '').trim();
+        if (/see more|show more|показать еще|показать ещё|еще|ещё/i.test(text)) {
+          try { el.click(); } catch(_) {}
+        }
+      });
+    }
+
+    if (window.__fbAutoScrollTimer) clearInterval(window.__fbAutoScrollTimer);
+    window.__fbAutoScrollTimer = setInterval(function(){
+      var currentHeight = document.body.scrollHeight;
+      if (currentHeight === lastScrollHeight) idleIterations++; else idleIterations = 0;
+      lastScrollHeight = currentHeight;
+
+      window.scrollBy({ top: scrollStep, left: 0, behavior: 'smooth' });
+      tryExpandButtons();
+      totalScrollSteps++;
+
+      if (idleIterations >= maxIdleIterations || totalScrollSteps >= maxScrollSteps) {
+        clearInterval(window.__fbAutoScrollTimer);
+        console.log('[FB Scraper] Auto-scroll complete');
+      }
+    }, scrollIntervalMs);
+  } catch (e) {
+    console.log('[FB Scraper] Auto-scroll error', e);
+  }
+})();
+
 // Добавляем интеграцию с Electron
 window.electronAPI && window.electronAPI.onScriptReady && window.electronAPI.onScriptReady();
 `;
