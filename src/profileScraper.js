@@ -65,7 +65,8 @@ const extractionScript = `(() => {
         if (!text || text.length < 3) {
           try { text = new URL(href).hostname.replace('www.', ''); } catch {}
         }
-        linksData.push(`${text} | ${href}`);
+        // Используем обычную конкатенацию, чтобы избежать вложенных template-literals
+        linksData.push(text + ' | ' + href);
       }
     } catch {}
   });
