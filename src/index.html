@@ -242,6 +242,7 @@
                 <button class="btn btn-primary" onclick="loadGroup()">Загрузить группу</button>
                 <button class="btn btn-contact" onclick="openTelegram()">📱 Связь</button>
                 <button class="btn btn-secondary" onclick="injectScript()">Запустить скрипт</button>
+                <button class="btn btn-secondary" onclick="scrapeLinks()">Парсить профили (Python)</button>
             </div>
             
             <div class="status">
@@ -426,6 +427,51 @@
                 console.error('Ошибка внедрения скрипта:', error);
                 updateStatus('Ошибка запуска скрипта. Убедитесь что страница загружена', false);
                 alert('Ошибка запуска скрипта:\n' + error.message + '\n\nУбедитесь что:\n1. Страница группы полностью загружена\n2. Вы вошли в Facebook\n3. Находитесь на странице группы');
+            }
+        }
+
+        /* Запуск Python парсера профилей */
+        async function scrapeLinks() {
+            updateStatus('Запуск парсера профилей...', false);
+            try {
+                const result = await window.electronAPI.scrapeLinks();
+                if (result.success) {
+                    const rows = result.data || [];
+                    if (rows.length === 0) {
+                        updateStatus('Нет данных для сохранения', false);
+                        alert('Парсер завершил работу, но данных нет. Убедитесь, что файл содержит валидные ссылки.');
+                        return;
+                    }
+
+                    // Конвертируем в CSV (используем ; как разделитель)
+                    const csvContent = rows.map(row => 
+                        row.map(field => {
+                            const stringField = field == null ? '' : String(field);
+                            // Экранируем кавычки и добавляем кавычки если есть запятые или переносы
+                            const escapedField = stringField.replace(/"/g, '""');
+                            return /[",\n]/.test(escapedField) ? `"${escapedField}"` : escapedField;
+                        }).join(';')
+                    ).join('\n');
+
+                    // Сохраняем через Electron API
+                    const saveRes = await window.electronAPI.saveCSV(csvContent);
+
+                    if (saveRes.success) {
+                        updateStatus(`CSV файл сохранен: ${saveRes.path}`, true);
+                        alert(`Данные успешно сохранены!\nПуть: ${saveRes.path}\nЭкспортировано записей: ${rows.length}`);
+                    } else if (saveRes.cancelled) {
+                        updateStatus('Сохранение отменено', true);
+                    } else {
+                        throw new Error(saveRes.error);
+                    }
+
+                } else {
+                    throw new Error(result.error || 'Парсер завершился с кодом ' + result.code);
+                }
+            } catch (error) {
+                console.error('Ошибка парсера профилей:', error);
+                updateStatus('Ошибка парсера профилей', false);
+                alert('Ошибка при запуске парсера профилей:\n' + error.message);
             }
         }
 
