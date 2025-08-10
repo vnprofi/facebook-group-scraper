@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { spawn } = require('child_process'); // Добавляем для запуска Python-скрипта
 
 let mainWindow;
 
@@ -72,6 +73,27 @@ ipcMain.handle('open-external', async (event, url) => {
     return { success: true };
   } catch (error) {
     console.error('Ошибка открытия ссылки:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Запуск Python-скрипта для парсинга профилей по ссылкам
+ipcMain.handle('scrape-links', async () => {
+  try {
+    // Путь к скрипту с парсером (файл link.txt в корне проекта)
+    const scriptPath = path.join(__dirname, '..', 'link.txt');
+
+    return await new Promise((resolve) => {
+      // Запускаем скрипт в отдельном процессе, пробрасывая stdio в текущий терминал
+      const child = spawn('python', [scriptPath], {
+        stdio: 'inherit'
+      });
+
+      child.on('close', (code) => {
+        resolve({ success: code === 0, code });
+      });
+    });
+  } catch (error) {
     return { success: false, error: error.message };
   }
 });

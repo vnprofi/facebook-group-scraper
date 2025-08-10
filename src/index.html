@@ -242,6 +242,7 @@
                 <button class="btn btn-primary" onclick="loadGroup()">Загрузить группу</button>
                 <button class="btn btn-contact" onclick="openTelegram()">📱 Связь</button>
                 <button class="btn btn-secondary" onclick="injectScript()">Запустить скрипт</button>
+                <button class="btn btn-secondary" onclick="scrapeLinks()">Парсить профили (Python)</button>
             </div>
             
             <div class="status">
@@ -426,6 +427,24 @@
                 console.error('Ошибка внедрения скрипта:', error);
                 updateStatus('Ошибка запуска скрипта. Убедитесь что страница загружена', false);
                 alert('Ошибка запуска скрипта:\n' + error.message + '\n\nУбедитесь что:\n1. Страница группы полностью загружена\n2. Вы вошли в Facebook\n3. Находитесь на странице группы');
+            }
+        }
+
+        /* Запуск Python парсера профилей */
+        async function scrapeLinks() {
+            updateStatus('Запуск парсера профилей...', false);
+            try {
+                const result = await window.electronAPI.scrapeLinks();
+                if (result.success) {
+                    updateStatus('Парсер профилей завершил работу', true);
+                    alert('Парсер успешно завершил работу. Проверьте созданные файлы.');
+                } else {
+                    throw new Error(result.error || 'Парсер завершился с кодом ' + result.code);
+                }
+            } catch (error) {
+                console.error('Ошибка парсера профилей:', error);
+                updateStatus('Ошибка парсера профилей', false);
+                alert('Ошибка при запуске парсера профилей:\n' + error.message);
             }
         }
 
