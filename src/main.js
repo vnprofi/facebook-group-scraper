@@ -2,7 +2,7 @@ const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 // const { spawn } = require('child_process'); // Более не используется
-const { scrapeProfiles } = require('./profileScraper'); // JS-функция для парсинга профилей
+const { scrapeProfiles } = require('./profileScraper'); // JS-функция для парсинга профилей (использует partition 'persist:fb')
 
 let mainWindow;
 
@@ -100,7 +100,7 @@ ipcMain.handle('scrape-links', async () => {
     }
 
     // Шаг 2. Запускаем скрытый парсер профилей
-    const results = await scrapeProfiles(mainWindow.webContents.session, links);
+    const results = await scrapeProfiles(links);
 
     return { success: true, data: results };
   } catch (error) {

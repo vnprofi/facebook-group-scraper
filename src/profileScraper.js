@@ -117,13 +117,13 @@ const extractionScript = `(() => {
  * Парсит список ссылок профилей Facebook, возвращая массив строк:
  *  [url, name, full_profile, links]
  */
-async function scrapeProfiles(session, links, onProgress = () => {}) {
+async function scrapeProfiles(links, onProgress = () => {}) {
   const win = new BrowserWindow({
     show: false,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: false,
-      session
+      partition: 'persist:fb'
     }
   });
 
