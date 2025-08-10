@@ -242,7 +242,7 @@
                 <button class="btn btn-primary" onclick="loadGroup()">Загрузить группу</button>
                 <button class="btn btn-contact" onclick="openTelegram()">📱 Связь</button>
                 <button class="btn btn-secondary" onclick="injectScript()">Запустить скрипт</button>
-                <button class="btn btn-secondary" onclick="scrapeLinks()">Парсить профили (Python)</button>
+                <button class="btn btn-secondary" onclick="scrapeLinks()">Парсить профили</button>
             </div>
             
             <div class="status">
@@ -430,7 +430,7 @@
             }
         }
 
-        /* Запуск Python парсера профилей */
+        /* Запуск парсера профилей */
         async function scrapeLinks() {
             updateStatus('Запуск парсера профилей...', false);
             try {

@@ -3,6 +3,20 @@ const { BrowserWindow } = require('electron');
 // Простая задержка
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// Helper to wait for a selector to appear (in the page context)
+function waitForSelector(webContents, selector, timeout = 10000) {
+  const expr = `new Promise((res) => {
+    const check = () => {
+      if (document.querySelector('${selector.replace(/'/g,"\\'")}')) res(true);
+      else if (Date.now() - start > ${timeout}) res(false);
+      else setTimeout(check, 300);
+    };
+    const start = Date.now();
+    check();
+  })`;
+  return webContents.executeJavaScript(expr, true);
+}
+
 // JS-код, который выполняется в контексте страницы профиля Facebook и возвращает необходимые данные.
 const extractionScript = `(() => {
   function cleanFacebookUrl(url) {
@@ -84,7 +98,7 @@ const extractionScript = `(() => {
   const allLinks = uniqueLinks.join(' --- ') || 'Ссылки не найдены';
 
   // Извлечение основной информации профиля
-  const targetDiv = document.querySelector('div.xieb3on');
+  const targetDiv = document.querySelector('div.xieb3on') || document.querySelector('div[data-pagelet^="ProfileTilesFeed_"]');
   let formattedProfile = 'Не найдено';
   if (targetDiv) {
     const lines = targetDiv.innerText.replace(/\u200b/g, '').split('\n').map(l => l.trim()).filter(Boolean);
@@ -93,7 +107,7 @@ const extractionScript = `(() => {
     formattedProfile = profileInfo.join('\n');
   }
 
-  const nameEl = document.querySelector('h1.html-h1.xdj266r.x14z9mp.xat24cr.x1lziwak.xexx8yu.xyri2b.x18d9i69.x1c1uobl.x1vvkbs.x1heor9g.x1qlqyl8.x1pd3egz.x1a2a7pz');
+  const nameEl = document.querySelector('h1') || document.querySelector('[data-testid="profile_header_name"]');
   const name = nameEl ? nameEl.textContent.trim().replace('\u00a0', ' ') : 'Не найдено';
 
   return { formattedProfile: formattedProfile || 'Не найдено', name, links: allLinks };
@@ -118,7 +132,9 @@ async function scrapeProfiles(session, links, onProgress = () => {}) {
     const url = links[i];
     try {
       await win.loadURL(url);
-      await delay(3500); // ждём загрузки и рендеринга
+      await win.webContents.executeJavaScript('document.readyState === "complete" ? true : new Promise(res=>window.addEventListener("load",()=>res(true)))', true);
+      // Небольшая дополнительная задержка, чтобы Facebook дорендерил DOM
+      await delay(2500);
       const data = await win.webContents.executeJavaScript(extractionScript, true);
       results.push([url, data.name, data.formattedProfile, data.links]);
     } catch (err) {
