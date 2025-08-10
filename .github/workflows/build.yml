@@ -4,6 +4,10 @@ on:
   push:
     branches:
       - main
+      - cursor/integrate-facebook-group-member-parser-c4d9
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
