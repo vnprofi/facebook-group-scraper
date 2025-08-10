@@ -135,6 +135,19 @@ async function scrapeProfiles(links, onProgress = () => {}) {
       await win.webContents.executeJavaScript('document.readyState === "complete" ? true : new Promise(res=>window.addEventListener("load",()=>res(true)))', true);
       // Небольшая дополнительная задержка, чтобы Facebook дорендерил DOM
       await delay(2500);
+
+      // Проверяем, не перекинуло ли нас на страницу логина
+      const currentUrl = win.webContents.getURL();
+      if (/facebook\.com\/(login|checkpoint)/i.test(currentUrl)) {
+        throw new Error('Не авторизовано в Facebook для ' + url);
+      }
+
+      // Ждем появления хотя бы заголовка профиля – максимум 10 сек
+      const hasH1 = await waitForSelector(win.webContents, 'h1', 10000);
+      if (!hasH1) {
+        throw new Error('Контент профиля не загрузился');
+      }
+
       const data = await win.webContents.executeJavaScript(extractionScript, true);
       results.push([url, data.name, data.formattedProfile, data.links]);
     } catch (err) {
