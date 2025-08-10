@@ -436,8 +436,35 @@
             try {
                 const result = await window.electronAPI.scrapeLinks();
                 if (result.success) {
-                    updateStatus('Парсер профилей завершил работу', true);
-                    alert('Парсер успешно завершил работу. Проверьте созданные файлы.');
+                    const rows = result.data || [];
+                    if (rows.length === 0) {
+                        updateStatus('Нет данных для сохранения', false);
+                        alert('Парсер завершил работу, но данных нет. Убедитесь, что файл содержит валидные ссылки.');
+                        return;
+                    }
+
+                    // Конвертируем в CSV (используем ; как разделитель)
+                    const csvContent = rows.map(row => 
+                        row.map(field => {
+                            const stringField = field == null ? '' : String(field);
+                            // Экранируем кавычки и добавляем кавычки если есть запятые или переносы
+                            const escapedField = stringField.replace(/"/g, '""');
+                            return /[",\n]/.test(escapedField) ? `"${escapedField}"` : escapedField;
+                        }).join(';')
+                    ).join('\n');
+
+                    // Сохраняем через Electron API
+                    const saveRes = await window.electronAPI.saveCSV(csvContent);
+
+                    if (saveRes.success) {
+                        updateStatus(`CSV файл сохранен: ${saveRes.path}`, true);
+                        alert(`Данные успешно сохранены!\nПуть: ${saveRes.path}\nЭкспортировано записей: ${rows.length}`);
+                    } else if (saveRes.cancelled) {
+                        updateStatus('Сохранение отменено', true);
+                    } else {
+                        throw new Error(saveRes.error);
+                    }
+
                 } else {
                     throw new Error(result.error || 'Парсер завершился с кодом ' + result.code);
                 }

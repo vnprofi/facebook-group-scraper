@@ -1,7 +1,8 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { spawn } = require('child_process'); // Добавляем для запуска Python-скрипта
+// const { spawn } = require('child_process'); // Более не используется
+const { scrapeProfiles } = require('./profileScraper'); // JS-функция для парсинга профилей
 
 let mainWindow;
 
@@ -80,19 +81,28 @@ ipcMain.handle('open-external', async (event, url) => {
 // Запуск Python-скрипта для парсинга профилей по ссылкам
 ipcMain.handle('scrape-links', async () => {
   try {
-    // Путь к скрипту с парсером (файл link.txt в корне проекта)
-    const scriptPath = path.join(__dirname, '..', 'link.txt');
-
-    return await new Promise((resolve) => {
-      // Запускаем скрипт в отдельном процессе, пробрасывая stdio в текущий терминал
-      const child = spawn('python', [scriptPath], {
-        stdio: 'inherit'
-      });
-
-      child.on('close', (code) => {
-        resolve({ success: code === 0, code });
-      });
+    // Шаг 1. Запрашиваем файл со ссылками у пользователя
+    const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openFile'],
+      filters: [{ name: 'Text files', extensions: ['txt', 'csv'] }]
     });
+
+    if (canceled || !filePaths || !filePaths.length) {
+      return { success: false, cancelled: true };
+    }
+
+    const filePath = filePaths[0];
+    const fileContent = fs.readFileSync(filePath, 'utf-8');
+    const links = fileContent.split(/\r?\n/).map(l => l.trim()).filter(l => l && l.includes('facebook.com'));
+
+    if (links.length === 0) {
+      return { success: false, error: 'Файл не содержит валидных ссылок Facebook' };
+    }
+
+    // Шаг 2. Запускаем скрытый парсер профилей
+    const results = await scrapeProfiles(mainWindow.webContents.session, links);
+
+    return { success: true, data: results };
   } catch (error) {
     return { success: false, error: error.message };
   }
