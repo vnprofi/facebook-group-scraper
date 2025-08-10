@@ -1,7 +1,7 @@
 {
   "name": "facebook-group-scraper",
-  "version": "1.0.0",
-  "description": "Facebook Group Members Scraper для macOS",
+  "version": "1.1.0",
+  "description": "Facebook Group Members & Profile Scraper для macOS",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",

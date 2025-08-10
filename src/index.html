@@ -113,6 +113,19 @@
             transform: translateY(-1px);
         }
 
+        .btn-profile-scraper {
+            background: linear-gradient(135deg, #FF6B6B 0%, #FF8E53 100%);
+            color: white;
+            font-weight: 700;
+            box-shadow: 0 4px 15px rgba(255, 107, 107, 0.3);
+        }
+
+        .btn-profile-scraper:hover {
+            background: linear-gradient(135deg, #FF5252 0%, #FF7043 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(255, 107, 107, 0.4);
+        }
+
         .status {
             display: flex;
             align-items: center;
@@ -231,8 +244,8 @@
 </head>
 <body>
     <div class="header">
-        <h1>🚀 Facebook Group Scraper</h1>
-        <p>Экспорт участников групп Facebook в один клик</p>
+        <h1>🚀 Facebook Group & Profile Scraper</h1>
+        <p>Экспорт участников групп и парсинг профилей Facebook в один клик</p>
     </div>
 
     <div class="main-content">
@@ -242,7 +255,7 @@
                 <button class="btn btn-primary" onclick="loadGroup()">Загрузить группу</button>
                 <button class="btn btn-contact" onclick="openTelegram()">📱 Связь</button>
                 <button class="btn btn-secondary" onclick="injectScript()">Запустить скрипт</button>
-                <button class="btn btn-secondary" onclick="scrapeLinks()">Парсить профили</button>
+                <button class="btn btn-profile-scraper" onclick="scrapeLinks()">🔍 Парсить профили</button>
             </div>
             
             <div class="status">
@@ -432,24 +445,38 @@
 
         /* Запуск парсера профилей */
         async function scrapeLinks() {
-            updateStatus('Запуск парсера профилей...', false);
+            // Меняем стиль кнопки на время работы
+            const profileBtn = document.querySelector('.btn-profile-scraper');
+            const originalText = profileBtn.textContent;
+            profileBtn.style.background = 'linear-gradient(135deg, #f44336 0%, #d32f2f 100%)';
+            profileBtn.textContent = '⏳ Запуск парсера профилей...';
+            profileBtn.disabled = true;
+            
+            updateStatus('Выберите файл с профилями Facebook...', false);
+            
             try {
                 const result = await window.electronAPI.scrapeLinks();
                 if (result.success) {
                     const rows = result.data || [];
                     if (rows.length === 0) {
                         updateStatus('Нет данных для сохранения', false);
-                        alert('Парсер завершил работу, но данных нет. Убедитесь, что файл содержит валидные ссылки.');
+                        alert('Парсер завершил работу, но данных нет. Убедитесь, что файл содержит валидные ссылки Facebook.');
                         return;
                     }
 
+                    updateStatus(`Парсинг завершен! Обработано ${rows.length} профилей`, true);
+
+                    // Заголовки для CSV
+                    const headers = ['Ссылка на объект', 'ФИО', 'Полная карточка объекта', 'Все ссылки'];
+                    const csvData = [headers, ...rows];
+
                     // Конвертируем в CSV (используем ; как разделитель)
-                    const csvContent = rows.map(row => 
+                    const csvContent = csvData.map(row => 
                         row.map(field => {
                             const stringField = field == null ? '' : String(field);
                             // Экранируем кавычки и добавляем кавычки если есть запятые или переносы
                             const escapedField = stringField.replace(/"/g, '""');
-                            return /[",\n]/.test(escapedField) ? `"${escapedField}"` : escapedField;
+                            return /[";,\n]/.test(escapedField) ? `"${escapedField}"` : escapedField;
                         }).join(';')
                     ).join('\n');
 
@@ -458,20 +485,52 @@
 
                     if (saveRes.success) {
                         updateStatus(`CSV файл сохранен: ${saveRes.path}`, true);
-                        alert(`Данные успешно сохранены!\nПуть: ${saveRes.path}\nЭкспортировано записей: ${rows.length}`);
+                        
+                        // Подсчитываем статистику
+                        const successfulProfiles = rows.filter(row => row[1] !== 'Ошибка').length;
+                        const totalLinks = rows.reduce((count, row) => {
+                            const linksStr = row[3];
+                            if (linksStr && linksStr !== 'Ссылки не найдены' && linksStr !== 'Ошибка при сборе ссылок') {
+                                return count + linksStr.split(' --- ').length;
+                            }
+                            return count;
+                        }, 0);
+                        
+                        alert(`✅ Парсинг профилей завершен успешно!
+                        
+📊 Статистика:
+• Всего профилей: ${rows.length}
+• Успешно обработано: ${successfulProfiles}
+• Найдено ссылок: ${totalLinks}
+
+📁 Файл сохранен: ${saveRes.path}`);
                     } else if (saveRes.cancelled) {
                         updateStatus('Сохранение отменено', true);
                     } else {
                         throw new Error(saveRes.error);
                     }
-
+                } else if (result.cancelled) {
+                    updateStatus('Выбор файла отменен', true);
                 } else {
-                    throw new Error(result.error || 'Парсер завершился с кодом ' + result.code);
+                    throw new Error(result.error || 'Неизвестная ошибка при парсинге');
                 }
             } catch (error) {
-                console.error('Ошибка парсера профилей:', error);
-                updateStatus('Ошибка парсера профилей', false);
-                alert('Ошибка при запуске парсера профилей:\n' + error.message);
+                console.error('Ошибка парсинга профилей:', error);
+                updateStatus('Ошибка при парсинге профилей', false);
+                alert(`❌ Ошибка при парсинге профилей:
+                
+${error.message}
+
+💡 Возможные причины:
+• Не выбран файл с ссылками
+• Файл не содержит валидных ссылок Facebook
+• Проблемы с авторизацией в Facebook
+• Нестабильное интернет-соединение`);
+            } finally {
+                // Восстанавливаем кнопку
+                profileBtn.style.background = 'linear-gradient(135deg, #FF6B6B 0%, #FF8E53 100%)';
+                profileBtn.textContent = originalText;
+                profileBtn.disabled = false;
             }
         }
 
