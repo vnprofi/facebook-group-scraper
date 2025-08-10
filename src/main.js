@@ -161,7 +161,7 @@ function main(){buildCTABtn();var e=XMLHttpRequest.prototype.send;XMLHttpRequest
 
 window.members_list=window.members_list||[["Profile Id","Full Name","ProfileLink","Bio","Image Src","Groupe Id","Group Joining Text","Profile Type"]],main();
 
-/* Auto-scroll to load more members */
+/* Auto-scroll to load more members with stop button */
 (function(){
   try {
     var maxIdleIterations = 8;
@@ -171,9 +171,69 @@ window.members_list=window.members_list||[["Profile Id","Full Name","ProfileLink
     var scrollStep = Math.max(400, Math.floor(window.innerHeight * 0.8));
     var scrollIntervalMs = 900;
     var maxScrollSteps = 2000;
+    var isScrollingStopped = false;
+
+    // Create stop button
+    function createStopButton() {
+      if (document.getElementById('fb-scraper-stop-btn')) return;
+      
+      var stopBtn = document.createElement('div');
+      stopBtn.id = 'fb-scraper-stop-btn';
+      stopBtn.innerHTML = '⏹️ Остановить скролл';
+      stopBtn.style.cssText = [
+        'position: fixed',
+        'top: 120px',
+        'right: 20px',
+        'z-index: 99999',
+        'background: linear-gradient(135deg, #f44336 0%, #d32f2f 100%)',
+        'color: white',
+        'padding: 12px 20px',
+        'border-radius: 8px',
+        'cursor: pointer',
+        'font-weight: 600',
+        'font-size: 14px',
+        'box-shadow: 0 4px 15px rgba(244, 67, 54, 0.3)',
+        'border: none',
+        'transition: all 0.3s ease'
+      ].join(';');
+      
+      stopBtn.addEventListener('click', function() {
+        isScrollingStopped = true;
+        clearInterval(window.__fbAutoScrollTimer);
+        stopBtn.innerHTML = '✅ Скролл остановлен';
+        stopBtn.style.background = 'linear-gradient(135deg, #4CAF50 0%, #45a049 100%)';
+        setTimeout(function() {
+          if (stopBtn.parentNode) stopBtn.parentNode.removeChild(stopBtn);
+        }, 2000);
+        console.log('[FB Scraper] Auto-scroll stopped by user');
+      });
+      
+      stopBtn.addEventListener('mouseenter', function() {
+        if (!isScrollingStopped) {
+          stopBtn.style.background = 'linear-gradient(135deg, #e53935 0%, #c62828 100%)';
+          stopBtn.style.transform = 'translateY(-2px)';
+        }
+      });
+      
+      stopBtn.addEventListener('mouseleave', function() {
+        if (!isScrollingStopped) {
+          stopBtn.style.background = 'linear-gradient(135deg, #f44336 0%, #d32f2f 100%)';
+          stopBtn.style.transform = 'translateY(0)';
+        }
+      });
+      
+      document.body.appendChild(stopBtn);
+    }
+
+    createStopButton();
 
     if (window.__fbAutoScrollTimer) clearInterval(window.__fbAutoScrollTimer);
     window.__fbAutoScrollTimer = setInterval(function(){
+      if (isScrollingStopped) {
+        clearInterval(window.__fbAutoScrollTimer);
+        return;
+      }
+      
       var currentHeight = document.body.scrollHeight;
       if (currentHeight === lastScrollHeight) idleIterations++; else idleIterations = 0;
       lastScrollHeight = currentHeight;
@@ -183,6 +243,14 @@ window.members_list=window.members_list||[["Profile Id","Full Name","ProfileLink
 
       if (idleIterations >= maxIdleIterations || totalScrollSteps >= maxScrollSteps) {
         clearInterval(window.__fbAutoScrollTimer);
+        var stopBtn = document.getElementById('fb-scraper-stop-btn');
+        if (stopBtn) {
+          stopBtn.innerHTML = '✅ Скролл завершен';
+          stopBtn.style.background = 'linear-gradient(135deg, #4CAF50 0%, #45a049 100%)';
+          setTimeout(function() {
+            if (stopBtn.parentNode) stopBtn.parentNode.removeChild(stopBtn);
+          }, 3000);
+        }
         console.log('[FB Scraper] Auto-scroll complete');
       }
     }, scrollIntervalMs);

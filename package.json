@@ -1,7 +1,7 @@
 {
-  "name": "facebook-group-scraper",
-  "version": "1.1.1",
-  "description": "Facebook Group Members & Profile Scraper для macOS",
+  "name": "fbsoft",
+  "version": "1.2.0",
+  "description": "FbSoft - Facebook Group Members & Profile Scraper",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
@@ -20,7 +20,7 @@
   },
   "build": {
     "appId": "com.yourcompany.facebook-group-scraper",
-    "productName": "FB Group & Profile Scraper",
+    "productName": "FbSoft",
     "directories": {
       "output": "dist"
     },

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Facebook Group Scraper</title>
+    <title>FbSoft</title>
     <style>
         * {
             margin: 0;
@@ -244,7 +244,7 @@
 </head>
 <body>
     <div class="header">
-        <h1>🚀 Facebook Group & Profile Scraper</h1>
+        <h1>FbSoft</h1>
         <p>Экспорт участников групп и парсинг профилей Facebook в один клик</p>
     </div>
 
@@ -452,9 +452,10 @@
             profileBtn.textContent = '⏳ Запуск парсера профилей...';
             profileBtn.disabled = true;
             
-            updateStatus('Выберите файл с профилями Facebook...', false);
+            updateStatus('Выберите файл с профилями Facebook...', true);
             
             try {
+                updateStatus('Парсинг профилей в процессе...', true);
                 const result = await window.electronAPI.scrapeLinks();
                 if (result.success) {
                     const rows = result.data || [];
