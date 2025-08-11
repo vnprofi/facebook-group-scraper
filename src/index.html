@@ -243,6 +243,7 @@
                 <button class="btn btn-contact" onclick="openTelegram()">📱 Связь</button>
                 <button class="btn btn-secondary" onclick="injectScript()">Запустить скрипт</button>
                 <button class="btn btn-secondary" onclick="scrapeLinks()">Парсить профили</button>
+                <button class="btn btn-secondary" onclick="logoutFacebook()" title="Выйти из аккаунта Facebook">🚪 Выход</button>
             </div>
             
             <div class="status">
@@ -273,9 +274,14 @@
                 <span>Найдено участников: </span>
                 <span class="member-count" id="memberCount">0</span>
             </div>
-            <button class="btn btn-primary" onclick="downloadCSV()" style="display: none;" id="downloadBtn">
-                📥 Скачать CSV
-            </button>
+            <div style="display: none;" id="exportButtons">
+                <button class="btn btn-primary" onclick="downloadCSV()" style="margin-right: 8px;">
+                    📥 Скачать CSV
+                </button>
+                <button class="btn btn-primary" onclick="downloadExcel()">
+                    📊 Скачать Excel
+                </button>
+            </div>
         </div>
     </div>
 
@@ -358,6 +364,36 @@
                 console.error('Ошибка:', error);
                 // Fallback - пытаемся открыть через window.open
                 window.open('https://t.me/Userspoi', '_blank');
+            }
+        }
+
+        async function logoutFacebook() {
+            if (confirm('Вы уверены, что хотите выйти из аккаунта Facebook? Все несохраненные данные будут потеряны.')) {
+                try {
+                    updateStatus('Выход из аккаунта...', false);
+                    
+                    // Очищаем локальные данные
+                    memberData = [];
+                    scriptInjected = false;
+                    updateMemberCount(0);
+                    document.getElementById('exportButtons').style.display = 'none';
+                    
+                    // Вызываем очистку сессии в main процессе
+                    const result = await window.electronAPI.clearSession();
+                    
+                    if (result.success) {
+                        // Перезагружаем webview с Facebook
+                        webview.src = 'https://www.facebook.com';
+                        updateStatus('Сессия очищена. Войдите в другой аккаунт', true);
+                        alert('Сессия успешно очищена! Теперь вы можете войти в другой аккаунт Facebook.');
+                    } else {
+                        throw new Error(result.error);
+                    }
+                } catch (error) {
+                    console.error('Ошибка при выходе:', error);
+                    updateStatus('Ошибка при выходе из аккаунта', false);
+                    alert('Ошибка при выходе из аккаунта: ' + error.message);
+                }
             }
         }
 
@@ -453,11 +489,21 @@
                         }).join(';')
                     ).join('\n');
 
-                    // Сохраняем через Electron API
-                    const saveRes = await window.electronAPI.saveCSV(csvContent);
+                    // Предлагаем выбор формата
+                    const format = confirm('Выберите формат экспорта:\nOK - Excel (.xlsx)\nОтмена - CSV (.csv)');
+                    
+                    let saveRes;
+                    if (format) {
+                        // Excel экспорт
+                        saveRes = await window.electronAPI.saveExcel(rows);
+                    } else {
+                        // CSV экспорт
+                        saveRes = await window.electronAPI.saveCSV(csvContent);
+                    }
 
                     if (saveRes.success) {
-                        updateStatus(`CSV файл сохранен: ${saveRes.path}`, true);
+                        const fileType = format ? 'Excel' : 'CSV';
+                        updateStatus(`${fileType} файл сохранен: ${saveRes.path}`, true);
                         alert(`Данные успешно сохранены!\nПуть: ${saveRes.path}\nЭкспортировано записей: ${rows.length}`);
                     } else if (saveRes.cancelled) {
                         updateStatus('Сохранение отменено', true);
@@ -478,7 +524,9 @@
         function updateMemberCount(count) {
             document.getElementById('memberCount').textContent = count;
             if (count > 0) {
-                document.getElementById('downloadBtn').style.display = 'block';
+                document.getElementById('exportButtons').style.display = 'block';
+            } else {
+                document.getElementById('exportButtons').style.display = 'none';
             }
         }
 
@@ -518,6 +566,35 @@
                 console.error('Ошибка экспорта:', error);
                 updateStatus('Ошибка при сохранении файла', false);
                 alert('Ошибка при сохранении файла: ' + error.message);
+            }
+        }
+
+        async function downloadExcel() {
+            try {
+                // Получаем данные из webview
+                const data = await webview.executeJavaScript('window.members_list');
+                
+                if (!data || data.length <= 1) {
+                    alert('Нет данных для экспорта. Убедитесь, что скрипт запущен и собрал участников.');
+                    return;
+                }
+
+                // Сохраняем через Electron API (передаем массив массивов напрямую)
+                const result = await window.electronAPI.saveExcel(data);
+                
+                if (result.success) {
+                    updateStatus(`Excel файл сохранен: ${result.path}`, true);
+                    alert(`Excel файл успешно сохранен!\nПуть: ${result.path}\nЭкспортировано записей: ${data.length - 1}`);
+                } else if (result.cancelled) {
+                    updateStatus('Сохранение отменено', true);
+                } else {
+                    throw new Error(result.error);
+                }
+                
+            } catch (error) {
+                console.error('Ошибка экспорта Excel:', error);
+                updateStatus('Ошибка при сохранении Excel файла', false);
+                alert('Ошибка при сохранении Excel файла: ' + error.message);
             }
         }
 

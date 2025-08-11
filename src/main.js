@@ -1,6 +1,7 @@
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const XLSX = require('xlsx');
 // const { spawn } = require('child_process'); // Более не используется
 const { scrapeProfiles } = require('./profileScraper'); // JS-функция для парсинга профилей (использует partition 'persist:fb')
 
@@ -68,12 +69,63 @@ ipcMain.handle('save-csv', async (event, data) => {
   }
 });
 
+ipcMain.handle('save-excel', async (event, data) => {
+  try {
+    const { filePath } = await dialog.showSaveDialog(mainWindow, {
+      defaultPath: `group-members-${new Date().toISOString().split('T')[0]}.xlsx`,
+      filters: [
+        { name: 'Excel файлы', extensions: ['xlsx'] },
+        { name: 'Все файлы', extensions: ['*'] }
+      ]
+    });
+
+    if (filePath) {
+      // Создаем workbook и worksheet
+      const workbook = XLSX.utils.book_new();
+      const worksheet = XLSX.utils.aoa_to_sheet(data);
+      
+      // Добавляем worksheet в workbook
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Участники группы');
+      
+      // Сохраняем файл
+      XLSX.writeFile(workbook, filePath);
+      
+      return { success: true, path: filePath };
+    }
+    
+    return { success: false, cancelled: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
 ipcMain.handle('open-external', async (event, url) => {
   try {
     await shell.openExternal(url);
     return { success: true };
   } catch (error) {
     console.error('Ошибка открытия ссылки:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('clear-session', async () => {
+  try {
+    // Получаем сессию Facebook
+    const fbSession = session.fromPartition('persist:fb');
+    
+    // Очищаем все данные сессии
+    await fbSession.clearStorageData({
+      storages: ['cookies', 'localstorage', 'sessionstorage', 'indexdb', 'websql', 'cachestorage']
+    });
+    
+    // Очищаем кэш
+    await fbSession.clearCache();
+    
+    console.log('Сессия Facebook успешно очищена');
+    return { success: true };
+  } catch (error) {
+    console.error('Ошибка очистки сессии:', error);
     return { success: false, error: error.message };
   }
 });

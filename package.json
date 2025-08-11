@@ -11,7 +11,12 @@
     "build-all": "electron-builder --mac --win",
     "dev": "electron . --dev"
   },
-  "keywords": ["facebook", "scraper", "electron", "macos"],
+  "keywords": [
+    "facebook",
+    "scraper",
+    "electron",
+    "macos"
+  ],
   "author": "Your Name",
   "license": "MIT",
   "devDependencies": {
@@ -36,9 +41,14 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ]
     }
+  },
+  "dependencies": {
+    "xlsx": "^0.18.5"
   }
 }
