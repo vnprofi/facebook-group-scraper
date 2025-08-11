@@ -1,6 +1,7 @@
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const XLSX = require('xlsx');
 // const { spawn } = require('child_process'); // Более не используется
 const { scrapeProfiles } = require('./profileScraper'); // JS-функция для парсинга профилей (использует partition 'persist:fb')
 
@@ -63,6 +64,42 @@ ipcMain.handle('save-csv', async (event, data) => {
     }
     
     return { success: false, cancelled: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Экспорт в Excel
+ipcMain.handle('save-excel', async (event, rows) => {
+  try {
+    const { filePath } = await dialog.showSaveDialog(mainWindow, {
+      defaultPath: `group-members-${new Date().toISOString().split('T')[0]}.xlsx`,
+      filters: [
+        { name: 'Excel файлы', extensions: ['xlsx'] }
+      ]
+    });
+
+    if (filePath) {
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      XLSX.utils.book_append_sheet(wb, ws, 'Data');
+      XLSX.writeFile(wb, filePath);
+      return { success: true, path: filePath };
+    }
+
+    return { success: false, cancelled: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Выход из аккаунта Facebook (очистка сессии)
+ipcMain.handle('logout', async () => {
+  try {
+    const fbSession = session.fromPartition('persist:fb');
+    await fbSession.clearStorageData();
+    await fbSession.clearCache();
+    return { success: true };
   } catch (error) {
     return { success: false, error: error.message };
   }

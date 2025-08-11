@@ -270,6 +270,7 @@
                 <button class="btn btn-secondary" onclick="injectScript()">Запустить скрипт (авто)</button>
                 <button class="btn btn-manual" onclick="injectScriptManual()">Запустить скрипт (ручной)</button>
                 <button class="btn btn-profile-scraper" onclick="scrapeLinks()">🔍 Парсить профили</button>
+                <button class="btn btn-secondary" onclick="logout()">🚪 Выйти</button>
             </div>
             
             <div class="status">
@@ -302,6 +303,9 @@
             </div>
             <button class="btn btn-primary" onclick="downloadCSV()" style="display: none;" id="downloadBtn">
                 📥 Скачать CSV
+            </button>
+            <button class="btn btn-secondary" onclick="downloadExcel()" style="display: none;" id="downloadExcelBtn">
+                📊 Скачать Excel
             </button>
         </div>
     </div>
@@ -584,6 +588,7 @@ console.log('[FB Scraper] Manual mode activated - scroll manually to load more m
             document.getElementById('memberCount').textContent = count;
             if (count > 0) {
                 document.getElementById('downloadBtn').style.display = 'block';
+                document.getElementById('downloadExcelBtn').style.display = 'block';
             }
         }
 
@@ -623,6 +628,49 @@ console.log('[FB Scraper] Manual mode activated - scroll manually to load more m
                 console.error('Ошибка экспорта:', error);
                 updateStatus('Ошибка при сохранении файла', false);
                 alert('Ошибка при сохранении файла: ' + error.message);
+            }
+        }
+
+        /* Экспорт в Excel */
+        async function downloadExcel() {
+            try {
+                const data = await webview.executeJavaScript('window.members_list');
+                if (!data || data.length <= 1) {
+                    alert('Нет данных для экспорта. Убедитесь, что скрипт запущен и собрал участников.');
+                    return;
+                }
+
+                const result = await window.electronAPI.saveExcel(data);
+
+                if (result.success) {
+                    updateStatus(`Excel файл сохранен: ${result.path}`, true);
+                    alert(`Файл успешно сохранен!\nПуть: ${result.path}\nЭкспортировано записей: ${data.length - 1}`);
+                } else if (result.cancelled) {
+                    updateStatus('Сохранение отменено', true);
+                } else {
+                    throw new Error(result.error);
+                }
+            } catch (error) {
+                console.error('Ошибка экспорта Excel:', error);
+                updateStatus('Ошибка при сохранении файла', false);
+                alert('Ошибка при сохранении файла: ' + error.message);
+            }
+        }
+
+        /* Выход из аккаунта Facebook */
+        async function logout() {
+            try {
+                const res = await window.electronAPI.logout();
+                if (res.success) {
+                    updateStatus('Сессия очищена. Перезагружаем Facebook...', true);
+                    webview.reload();
+                    alert('Вы вышли из аккаунта Facebook. Зайдите в другой аккаунт и продолжайте работу.');
+                } else {
+                    throw new Error(res.error);
+                }
+            } catch (error) {
+                console.error('Ошибка выхода:', error);
+                alert('Ошибка выхода из аккаунта: ' + error.message);
             }
         }
 
