@@ -569,7 +569,7 @@ ${error.message}
 console.log('[FB Scraper] Manual mode activated - scroll manually to load more members');`
                 );
                 
-                await browser.contentWindow.eval(manualScript);
+                await browser.executeJavaScript(manualScript);
                 
                 updateStatus('Скрипт запущен в ручном режиме! Скроллите вручную для загрузки участников', true);
                 
