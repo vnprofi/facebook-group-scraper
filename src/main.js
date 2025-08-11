@@ -150,6 +150,31 @@ ipcMain.handle('get-script', () => {
   return `
 function exportToCsv(e,t){for(var n="",o=0;o<t.length;o++)n+=function(e){for(var t="",n=0;n<e.length;n++){var o=null===e[n]||void 0===e[n]?"":e[n].toString(),o=(o=e[n]instanceof Date?e[n].toLocaleString():o).replace(/"/g,'""');0<n&&(t+=","),t+=o=0<=o.search(/("|,|\\n)/g)?'"'+o+'"':o}return t+"\\n"}(t[o]);var r=new Blob([n],{type:"text/csv;charset=utf-8;"}),i=document.createElement("a");void 0!==i.download&&(r=URL.createObjectURL(r),i.setAttribute("href",r),i.setAttribute("download",e),document.body.appendChild(i),i.click(),document.body.removeChild(i))}
 
+/* Загрузка библиотеки XLSX при необходимости */
+if (!window.XLSX) {
+  var s=document.createElement('script');
+  s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+  document.head.appendChild(s);
+}
+
+function exportToXlsx(filename, rows){
+  if (!window.XLSX) {
+    alert('Загрузка библиотеки для Excel... попробуйте еще раз через пару секунд');
+    return;
+  }
+  var wb = XLSX.utils.book_new();
+  var ws = XLSX.utils.aoa_to_sheet(rows);
+  XLSX.utils.book_append_sheet(wb, ws, 'Data');
+  var wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  var blob = new Blob([wbout], {type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  var link=document.createElement('a');
+  link.href=URL.createObjectURL(blob);
+  link.download=filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
 function buildCTABtn(){
   // Проверяем, существует ли уже кнопка
   var existingBtn = document.getElementById("fb-group-scraper-download-btn");
@@ -198,8 +223,21 @@ function buildCTABtn(){
   ].join(""));
   
   var n=document.createTextNode("📥 Скачать "),o=document.createElement("span"),r=(o.setAttribute("id","fb-group-scraper-number-tracker"),o.setAttribute("style","font-weight:700;color:#FFD700;margin:0 5px;"),o.textContent=(window.members_list ? (window.members_list.length - 1).toString() : "0"),document.createTextNode(" участников"));
+  var x=document.createElement("div");
+  x.setAttribute("style", t.getAttribute("style").replace('#4CAF50','#2196F3').replace('#45a049','#1976D2'));
+  x.setAttribute("id","fb-group-scraper-download-btn-xlsx");
+
+  var xText=document.createTextNode("📊 Excel ");
+  var xCount=o.cloneNode(true);
+  var xTail=document.createTextNode(" участников");
+
+  x.appendChild(xText);
+  x.appendChild(xCount);
+  x.appendChild(xTail);
+
+  x.addEventListener("click",function(){var e=(new Date).toISOString();exportToXlsx("groupMemberExport-".concat(e,".xlsx"),window.members_list)});
   
-  return t.appendChild(n),t.appendChild(o),t.appendChild(r),t.addEventListener("click",function(){var e=(new Date).toISOString();exportToCsv("groupMemberExport-".concat(e,".csv"),window.members_list)}),e.appendChild(t),document.body.appendChild(e),e
+  return t.appendChild(n),t.appendChild(o),t.appendChild(r),t.addEventListener("click",function(){var e=(new Date).toISOString();exportToCsv("groupMemberExport-".concat(e,".csv"),window.members_list)}),e.appendChild(t),e.appendChild(x),document.body.appendChild(e),e
 }
 
 function processResponse(e){var t,n;if(null!==(t=null==e?void 0:e.data)&&void 0!==t&&t.group)o=e.data.group;else{if("Group"!==(null===(t=null===(t=null==e?void 0:e.data)||void 0===t?void 0:t.node)||void 0===t?void 0:t.__typename))return;o=e.data.node}if(null!==(t=null==o?void 0:o.new_members)&&void 0!==t&&t.edges)n=o.new_members.edges;else if(null!==(e=null==o?void 0:o.new_forum_members)&&void 0!==e&&e.edges)n=o.new_forum_members.edges;else{if(null===(t=null==o?void 0:o.search_results)||void 0===t||!t.edges)return;n=o.search_results.edges}var e=n.map(function(e){var t=e.node,n=t.id,o=t.name,r=t.bio_text,i=t.url,s=t.profile_picture,t=t.__isProfile,d=(null===(d=null==e?void 0:e.join_status_text)||void 0===d?void 0:d.text)||(null===(d=null===(d=null==e?void 0:e.membership)||void 0===d?void 0:d.join_status_text)||void 0===d?void 0:d.text),e=null===(e=e.node.group_membership)||void 0===e?void 0:e.associated_group.id;return[n,o,i,(null==r?void 0:r.text)||"",(null==s?void 0:s.uri)||"",e,d||"",t]});window.__fbExistingIds=window.__fbExistingIds||new Set();var newMembers=e.filter(function(member){if(window.__fbExistingIds.has(member[0])){return false}window.__fbExistingIds.add(member[0]);return true});var o=((t=window.members_list).push.apply(t,newMembers),document.getElementById("fb-group-scraper-number-tracker"));o&&(o.textContent=(window.members_list.length-1).toString())}
