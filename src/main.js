@@ -226,6 +226,7 @@ function buildCTABtn(){
   var x=document.createElement("div");
   x.setAttribute("style", t.getAttribute("style").replace('#4CAF50','#2196F3').replace('#45a049','#1976D2'));
   x.setAttribute("id","fb-group-scraper-download-btn-xlsx");
+  x.style.display="none";
 
   var xText=document.createTextNode("📊 Excel ");
   var xCount=o.cloneNode(true);

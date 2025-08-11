@@ -453,6 +453,8 @@
 
                 scriptInjected = true;
                 updateStatus('Скрипт запущен! Автоскролл включен — список участников прокручивается автоматически', true);
+                document.getElementById('downloadBtn').style.display = 'block';
+                document.getElementById('downloadExcelBtn').style.display = 'block';
                 
             } catch (error) {
                 console.error('Ошибка внедрения скрипта:', error);
@@ -576,6 +578,8 @@ console.log('[FB Scraper] Manual mode activated - scroll manually to load more m
                 await browser.executeJavaScript(manualScript);
                 
                 updateStatus('Скрипт запущен в ручном режиме! Скроллите вручную для загрузки участников', true);
+                document.getElementById('downloadBtn').style.display = 'block';
+                document.getElementById('downloadExcelBtn').style.display = 'block';
                 
             } catch (error) {
                 console.error('Ошибка внедрения скрипта:', error);
