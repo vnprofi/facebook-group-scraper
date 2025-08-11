@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FbSoft</title>
+    <title>FBSoft</title>
     <style>
         * {
             margin: 0;
@@ -126,6 +126,19 @@
             box-shadow: 0 6px 20px rgba(255, 107, 107, 0.4);
         }
 
+        .btn-manual {
+            background: linear-gradient(135deg, #9C27B0 0%, #673AB7 100%);
+            color: white;
+            font-weight: 600;
+            box-shadow: 0 4px 15px rgba(156, 39, 176, 0.3);
+        }
+
+        .btn-manual:hover {
+            background: linear-gradient(135deg, #8E24AA 0%, #5E35B1 100%);
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(156, 39, 176, 0.4);
+        }
+
         .status {
             display: flex;
             align-items: center;
@@ -244,7 +257,7 @@
 </head>
 <body>
     <div class="header">
-        <h1>FbSoft</h1>
+        <h1>FBSoft</h1>
         <p>Экспорт участников групп и парсинг профилей Facebook в один клик</p>
     </div>
 
@@ -254,7 +267,8 @@
                 <input type="text" id="groupUrl" placeholder="Вставьте ссылку на группу Facebook (например: https://www.facebook.com/groups/yourgroup)">
                 <button class="btn btn-primary" onclick="loadGroup()">Загрузить группу</button>
                 <button class="btn btn-contact" onclick="openTelegram()">📱 Связь</button>
-                <button class="btn btn-secondary" onclick="injectScript()">Запустить скрипт</button>
+                <button class="btn btn-secondary" onclick="injectScript()">Запустить скрипт (авто)</button>
+                <button class="btn btn-manual" onclick="injectScriptManual()">Запустить скрипт (ручной)</button>
                 <button class="btn btn-profile-scraper" onclick="scrapeLinks()">🔍 Парсить профили</button>
             </div>
             
@@ -532,6 +546,31 @@ ${error.message}
                 profileBtn.style.background = 'linear-gradient(135deg, #FF6B6B 0%, #FF8E53 100%)';
                 profileBtn.textContent = originalText;
                 profileBtn.disabled = false;
+            }
+        }
+
+        /* Запуск скрипта в ручном режиме (без автоскролла) */
+        async function injectScriptManual() {
+            try {
+                updateStatus('Внедрение скрипта (ручной режим)...', true);
+                
+                const browser = document.getElementById('browser');
+                if (!browser || !browser.contentWindow) {
+                    throw new Error('Браузер не загружен');
+                }
+
+                // Получаем скрипт без автоскролла
+                const scriptContent = await window.electronAPI.getScript();
+                const scriptWithoutAutoscroll = scriptContent.replace(/\/\* Auto-scroll[\s\S]*?\}\)\(\);/, '// Auto-scroll disabled in manual mode');
+                
+                await browser.contentWindow.eval(scriptWithoutAutoscroll);
+                
+                updateStatus('Скрипт запущен в ручном режиме! Скроллите вручную для загрузки участников', true);
+                
+            } catch (error) {
+                console.error('Ошибка внедрения скрипта:', error);
+                updateStatus('Ошибка запуска скрипта. Убедитесь что страница загружена', false);
+                alert('Ошибка запуска скрипта:\n' + error.message + '\n\nУбедитесь что:\n1. Страница группы полностью загружена\n2. Вы вошли в Facebook\n3. Находитесь на странице группы');
             }
         }
 
