@@ -114,6 +114,17 @@ ipcMain.handle('get-script', () => {
 function exportToCsv(e,t){for(var n="",o=0;o<t.length;o++)n+=function(e){for(var t="",n=0;n<e.length;n++){var o=null===e[n]||void 0===e[n]?"":e[n].toString(),o=(o=e[n]instanceof Date?e[n].toLocaleString():o).replace(/"/g,'""');0<n&&(t+=","),t+=o=0<=o.search(/("|,|\\n)/g)?'"'+o+'"':o}return t+"\\n"}(t[o]);var r=new Blob([n],{type:"text/csv;charset=utf-8;"}),i=document.createElement("a");void 0!==i.download&&(r=URL.createObjectURL(r),i.setAttribute("href",r),i.setAttribute("download",e),document.body.appendChild(i),i.click(),document.body.removeChild(i))}
 
 function buildCTABtn(){
+  // Проверяем, существует ли уже кнопка
+  var existingBtn = document.getElementById("fb-group-scraper-download-btn");
+  if (existingBtn) {
+    // Обновляем счетчик в существующей кнопке
+    var counter = document.getElementById("fb-group-scraper-number-tracker");
+    if (counter && window.members_list) {
+      counter.textContent = (window.members_list.length - 1).toString();
+    }
+    return existingBtn;
+  }
+
   var e=document.createElement("div"),t=(e.setAttribute("style",[
     "position: fixed;",
     "top: 80px;",
@@ -125,6 +136,7 @@ function buildCTABtn(){
     "pointer-events: none;"
   ].join("")),document.createElement("div"));
   
+  t.setAttribute("id", "fb-group-scraper-download-btn");
   t.setAttribute("style",[
     "position: absolute;",
     "top: 0;",
@@ -148,7 +160,7 @@ function buildCTABtn(){
     "backdrop-filter: blur(10px);"
   ].join(""));
   
-  var n=document.createTextNode("📥 Скачать "),o=document.createElement("span"),r=(o.setAttribute("id","fb-group-scraper-number-tracker"),o.setAttribute("style","font-weight:700;color:#FFD700;margin:0 5px;"),o.textContent="0",document.createTextNode(" участников"));
+  var n=document.createTextNode("📥 Скачать "),o=document.createElement("span"),r=(o.setAttribute("id","fb-group-scraper-number-tracker"),o.setAttribute("style","font-weight:700;color:#FFD700;margin:0 5px;"),o.textContent=(window.members_list ? (window.members_list.length - 1).toString() : "0"),document.createTextNode(" участников"));
   
   return t.appendChild(n),t.appendChild(o),t.appendChild(r),t.addEventListener("click",function(){var e=(new Date).toISOString();exportToCsv("groupMemberExport-".concat(e,".csv"),window.members_list)}),e.appendChild(t),document.body.appendChild(e),e
 }

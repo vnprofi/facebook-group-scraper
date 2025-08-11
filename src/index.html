@@ -559,11 +559,17 @@ ${error.message}
                     throw new Error('Браузер не загружен');
                 }
 
-                // Получаем скрипт без автоскролла
+                // Получаем скрипт и убираем только автоскролл, оставляя всю логику сбора
                 const scriptContent = await window.electronAPI.getScript();
-                const scriptWithoutAutoscroll = scriptContent.replace(/\/\* Auto-scroll[\s\S]*?\}\)\(\);/, '// Auto-scroll disabled in manual mode');
                 
-                await browser.contentWindow.eval(scriptWithoutAutoscroll);
+                // Заменяем автоскролл на сообщение о ручном режиме
+                const manualScript = scriptContent.replace(
+                    /\/\* Auto-scroll to load more members with stop button \*\/[\s\S]*?\}\)\(\);/,
+                    `/* Manual mode - auto-scroll disabled */
+console.log('[FB Scraper] Manual mode activated - scroll manually to load more members');`
+                );
+                
+                await browser.contentWindow.eval(manualScript);
                 
                 updateStatus('Скрипт запущен в ручном режиме! Скроллите вручную для загрузки участников', true);
                 
