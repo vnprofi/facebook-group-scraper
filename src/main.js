@@ -58,7 +58,11 @@ app.on('activate', () => {
 // ---------------------------------------------------------------------------
 
 ipcMain.handle('get-script', (event, payload = {}) => {
-  const kind = payload.kind === 'posts' ? 'posts' : 'members';
+  const kind = payload.kind === 'posts'
+    ? 'posts'
+    : payload.kind === 'comments'
+      ? 'comments'
+      : 'members';
   const mode = payload.mode === 'auto' ? 'auto' : 'manual';
 
   const source = fs.readFileSync(path.join(__dirname, 'injected.js'), 'utf8');
@@ -71,7 +75,8 @@ ipcMain.handle('get-script', (event, payload = {}) => {
 
 function defaultFileName(kind, extension) {
   const date = new Date().toISOString().split('T')[0];
-  const base = kind === 'posts' ? 'profile-posts' : 'group-members';
+  const base =
+    kind === 'posts' ? 'profile-posts' : kind === 'comments' ? 'post-comments' : 'group-members';
   return `${base}-${date}.${extension}`;
 }
 
@@ -132,7 +137,8 @@ ipcMain.handle('save-excel', async (event, payload = {}) => {
       return { wch: Math.min(60, Math.max(12, width)) };
     });
 
-    const sheetName = payload.kind === 'posts' ? 'Посты' : 'Участники';
+    const sheetName =
+      payload.kind === 'posts' ? 'Посты' : payload.kind === 'comments' ? 'Комментарии' : 'Участники';
     XLSX.utils.book_append_sheet(workbook, sheet, sheetName);
     XLSX.writeFile(workbook, filePath);
 
