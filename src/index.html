@@ -445,7 +445,8 @@
       address: document.getElementById('address'),
       statusText: document.getElementById('statusText'),
       statusDot: document.getElementById('statusDot'),
-      count: document.getElementById('count')
+      count: document.getElementById('count'),
+      footerHint: document.getElementById('footerHint')
     };
 
     const state = {
@@ -543,6 +544,13 @@
     function setKind(kind) {
       state.kind = kind === 'posts' ? 'posts' : 'members';
 
+      // Посты собираются только при ручной прокрутке: автопрокрутка
+      // на профиле проскакивает ленту и не успевает загрузить посты.
+      els.autoBtn.style.display = state.kind === 'posts' ? 'none' : '';
+      els.footerHint.textContent = state.kind === 'posts'
+        ? 'Excel дополнительно содержит данные профиля'
+        : 'CSV и Excel содержат текущую выборку';
+
       // Переключение вкладки не должно продолжать сбор в прежнем режиме.
       if (state.session) {
         state.session = false;
@@ -624,16 +632,19 @@
         return;
       }
 
+      // Для постов автоскролл отключён всегда — только ручная прокрутка.
+      const effectiveMode = kind === 'posts' ? 'manual' : mode;
+
       try {
-        const script = await window.api.getScript(kind, mode);
+        const script = await window.api.getScript(kind, effectiveMode);
         await webview.executeJavaScript(script);
 
         state.session = true;
-        state.scrolling = mode === 'auto';
-        els.stopBtn.disabled = mode !== 'auto';
+        state.scrolling = effectiveMode === 'auto';
+        els.stopBtn.disabled = effectiveMode !== 'auto';
 
         setStatus(
-          mode === 'auto'
+          effectiveMode === 'auto'
             ? 'Сбор запущен, страница прокручивается автоматически'
             : 'Сбор запущен. Прокручивайте страницу вручную',
           'active'
@@ -682,6 +693,20 @@
       }
     }
 
+    async function readProfile() {
+      if (state.kind !== 'posts') return [];
+      if (!isProfileUrl(webview.getURL())) return [];
+      try {
+        const raw = await webview.executeJavaScript(
+          'JSON.stringify(window.__fbsoftCollectProfile ? window.__fbsoftCollectProfile() : (window.__fbProfile || []))'
+        );
+        const fields = JSON.parse(raw);
+        return Array.isArray(fields) ? fields : [];
+      } catch (error) {
+        return [];
+      }
+    }
+
     function toCsv(rows) {
       return rows.map((row) => row.map((cell) => {
         const value = cell == null ? '' : String(cell);
@@ -698,9 +723,10 @@
         }
 
         setStatus('Сохранение файла…', 'idle');
+        const profile = format === 'excel' ? await readProfile() : [];
         const result = format === 'csv'
           ? await window.api.saveCsv(toCsv(rows), state.kind)
-          : await window.api.saveExcel(rows, state.kind);
+          : await window.api.saveExcel(rows, state.kind, profile);
 
         if (result && result.success) {
           setStatus('Файл сохранён: ' + result.path, 'ok');
