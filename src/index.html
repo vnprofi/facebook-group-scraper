@@ -455,7 +455,9 @@
       counts: { members: 0, posts: 0, comments: 0 },
       ready: false,
       session: false,
-      scrolling: false
+      scrolling: false,
+      arming: false,
+      armQueued: false
     };
 
     const RESERVED_PATHS = [
@@ -509,6 +511,8 @@
       els.address.title = value;
     }
 
+    const COMMENTS_HINT = 'Откройте пост — комментарии и реакции собираются автоматически';
+
     function navigationHint(url) {
       if (!url || !/facebook\.com/i.test(url)) {
         return { text: 'Ожидание Facebook…', tone: 'idle' };
@@ -517,13 +521,9 @@
         return { text: 'Войдите в аккаунт Facebook, чтобы продолжить', tone: 'idle' };
       }
       if (isGroupUrl(url)) {
-        if (state.kind !== 'members') {
-          return {
-            text: state.kind === 'comments'
-              ? 'Для сбора комментариев откройте страницу профиля'
-              : 'Для сбора постов откройте страницу профиля',
-            tone: 'idle'
-          };
+        if (state.kind === 'comments') return { text: COMMENTS_HINT, tone: 'ok' };
+        if (state.kind === 'posts') {
+          return { text: 'Для сбора постов откройте страницу профиля', tone: 'idle' };
         }
         return url.indexOf('/members') !== -1
           ? { text: 'Страница участников. Запустите сбор.', tone: 'ok' }
@@ -533,17 +533,14 @@
         if (state.kind === 'members') {
           return { text: 'Для сбора участников откройте страницу группы', tone: 'idle' };
         }
-        if (state.kind === 'comments') {
-          return { text: 'Запустите сбор и раскрывайте комментарии под постами', tone: 'ok' };
-        }
+        if (state.kind === 'comments') return { text: COMMENTS_HINT, tone: 'ok' };
         return { text: 'Страница профиля. Запустите сбор постов.', tone: 'ok' };
       }
+      if (state.kind === 'comments') return { text: COMMENTS_HINT, tone: 'idle' };
       return {
         text: state.kind === 'members'
           ? 'Откройте страницу группы Facebook'
-          : state.kind === 'comments'
-            ? 'Откройте страницу профиля для сбора комментариев'
-            : 'Откройте страницу профиля Facebook',
+          : 'Откройте страницу профиля Facebook',
         tone: 'idle'
       };
     }
@@ -556,24 +553,36 @@
     function setKind(kind) {
       state.kind = kind === 'posts' || kind === 'comments' ? kind : 'members';
 
-      // Посты и комментарии собираются только при ручной прокрутке:
-      // автопрокрутка на профиле проскакивает ленту.
-      const manualOnly = state.kind !== 'members';
-      els.autoBtn.style.display = manualOnly ? 'none' : '';
+      const isComments = state.kind === 'comments';
+      const isMembers = state.kind === 'members';
+
+      // Участники собираются автоскроллом, посты — ручной прокруткой,
+      // комментарии — сами, как только открыт пост. Кнопки прокрутки
+      // в режиме комментариев не нужны.
+      els.autoBtn.style.display = isMembers ? '' : 'none';
+      els.manualBtn.style.display = isComments ? 'none' : '';
+      els.stopBtn.style.display = isComments ? 'none' : '';
+      els.stopBtn.disabled = true;
+
       els.footerHint.textContent =
         state.kind === 'posts'
           ? 'Excel дополнительно содержит данные профиля'
-          : state.kind === 'comments'
-            ? 'Комментарии собираются при раскрытии постов'
+          : isComments
+            ? 'Реакции и комментарии собираются при открытии поста'
             : 'CSV и Excel содержат текущую выборку';
 
       // Переключение вкладки не должно продолжать сбор в прежнем режиме.
-      if (state.session) {
+      if (state.session || state.scrolling) {
         state.session = false;
         state.scrolling = false;
-        els.stopBtn.disabled = true;
         try {
           webview.executeJavaScript('window.__fbsoftStop && window.__fbsoftStop()').catch(() => {});
+        } catch (error) { /* webview ещё не готов */ }
+      }
+
+      if (!isComments) {
+        try {
+          webview.executeJavaScript('window.__fbsoftHideOverlay && window.__fbsoftHideOverlay()').catch(() => {});
         } catch (error) { /* webview ещё не готов */ }
       }
 
@@ -583,10 +592,11 @@
         tab.setAttribute('aria-selected', active ? 'true' : 'false');
       });
 
-      setCounts(state.counts.members, state.counts.posts);
+      setCounts(state.counts.members, state.counts.posts, state.counts.comments);
 
       if (state.ready) {
         applyHint();
+        if (isComments) armComments();
       }
     }
 
@@ -630,6 +640,38 @@
       }
     }
 
+    // Комментарии и реакции перехватываются без кнопок: скрипт внедряется
+    // сразу при открытии вкладки и после каждой загрузки страницы.
+    async function armComments() {
+      if (state.kind !== 'comments' || !state.ready) return;
+      if (state.arming) {
+        // Страница успела перезагрузиться, пока внедряли скрипт.
+        state.armQueued = true;
+        return;
+      }
+
+      state.arming = true;
+      state.armQueued = false;
+      try {
+        const script = await window.api.getScript('comments', 'manual');
+        await webview.executeJavaScript(script);
+        if (state.kind !== 'comments') return;
+
+        state.session = true;
+        state.scrolling = false;
+        els.stopBtn.disabled = true;
+        setStatus(COMMENTS_HINT, 'ok');
+      } catch (error) {
+        // Страница ещё перезагружается — повторно подключимся на dom-ready.
+      } finally {
+        state.arming = false;
+        if (state.armQueued) {
+          state.armQueued = false;
+          armComments();
+        }
+      }
+    }
+
     async function start(kind, mode) {
       if (!state.ready) {
         setStatus('Facebook ещё не загружен', 'error');
@@ -638,17 +680,12 @@
 
       const url = webview.getURL();
 
-      if (kind === 'posts' || kind === 'comments') {
+      if (kind === 'posts') {
         if (!isProfileUrl(url)) {
-          setStatus(
-            kind === 'comments'
-              ? 'Сбор комментариев доступен только на странице профиля'
-              : 'Сбор постов доступен только на странице профиля',
-            'error'
-          );
+          setStatus('Сбор постов доступен только на странице профиля', 'error');
           return;
         }
-      } else if (!isGroupUrl(url)) {
+      } else if (kind === 'members' && !isGroupUrl(url)) {
         setStatus('Сбор участников доступен только на странице группы', 'error');
         return;
       }
@@ -666,7 +703,7 @@
 
         setStatus(
           kind === 'comments'
-            ? 'Сбор запущен. Раскрывайте комментарии под постами'
+            ? COMMENTS_HINT
             : effectiveMode === 'auto'
               ? 'Сбор запущен, страница прокручивается автоматически'
               : 'Сбор запущен. Прокручивайте страницу вручную',
@@ -839,6 +876,12 @@
       webview.addEventListener('dom-ready', () => {
         state.ready = true;
         updateAddress(webview.getURL());
+
+        // Во вкладке комментариев перехватчик нужен сразу, без кнопок.
+        if (state.kind === 'comments') {
+          armComments();
+          return;
+        }
 
         // После полной перезагрузки возвращаем перехватчик, если сбор уже запускали.
         if (state.session) {
