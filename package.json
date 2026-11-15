@@ -1,23 +1,22 @@
 {
   "name": "fbsoft",
-  "version": "1.2.1",
-  "description": "FBSoft - Facebook Group Members & Profile Scraper",
+  "version": "2.0.0",
+  "description": "FBSoft — сбор участников групп и постов Facebook с экспортом в CSV и Excel",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
+    "dev": "electron . --dev",
     "build": "electron-builder",
     "build-mac": "electron-builder --mac",
     "build-win": "electron-builder --win",
-    "build-all": "electron-builder --mac --win",
-    "dev": "electron . --dev"
+    "build-all": "electron-builder --mac --win"
   },
   "keywords": [
     "facebook",
     "scraper",
-    "electron",
-    "macos"
+    "electron"
   ],
-  "author": "Your Name",
+  "author": "FBSoft",
   "license": "MIT",
   "dependencies": {
     "xlsx": "^0.18.5"
@@ -29,26 +28,45 @@
   "build": {
     "appId": "com.yourcompany.facebook-group-scraper",
     "productName": "FBSoft",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "directories": {
-      "output": "dist"
+      "output": "dist",
+      "buildResources": "build"
     },
+    "files": [
+      "src/**/*",
+      "package.json",
+      "!**/*.map"
+    ],
     "mac": {
       "category": "public.app-category.productivity",
+      "icon": "build/icon.png",
       "target": [
         {
-          "target": "dmg"
+          "target": "dmg",
+          "arch": ["x64", "arm64"]
+        },
+        {
+          "target": "zip",
+          "arch": ["x64", "arm64"]
         }
       ]
     },
     "win": {
+      "icon": "build/icon.png",
       "target": [
         {
           "target": "nsis",
-          "arch": [
-            "x64"
-          ]
+          "arch": ["x64"]
         }
       ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "FBSoft"
     }
   }
 }
