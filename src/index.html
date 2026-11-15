@@ -378,6 +378,7 @@
     <nav class="tabs" role="tablist">
       <button class="tab active" data-kind="members" role="tab" aria-selected="true">Участники группы</button>
       <button class="tab" data-kind="posts" role="tab" aria-selected="false">Посты профиля</button>
+      <button class="tab" data-kind="comments" role="tab" aria-selected="false">Комментарии</button>
     </nav>
 
     <div class="topbar-actions">
@@ -451,7 +452,7 @@
 
     const state = {
       kind: 'members',
-      counts: { members: 0, posts: 0 },
+      counts: { members: 0, posts: 0, comments: 0 },
       ready: false,
       session: false,
       scrolling: false
@@ -491,9 +492,10 @@
       els.statusDot.className = 'dot' + (tone ? ' ' + tone : '');
     }
 
-    function setCounts(members, posts) {
-      state.counts.members = Math.max(0, members || 0);
-      state.counts.posts = Math.max(0, posts || 0);
+    function setCounts(members, posts, comments) {
+      if (members != null) state.counts.members = Math.max(0, members || 0);
+      if (posts != null) state.counts.posts = Math.max(0, posts || 0);
+      if (comments != null) state.counts.comments = Math.max(0, comments || 0);
 
       const active = state.counts[state.kind];
       els.count.textContent = String(active);
@@ -515,8 +517,13 @@
         return { text: 'Войдите в аккаунт Facebook, чтобы продолжить', tone: 'idle' };
       }
       if (isGroupUrl(url)) {
-        if (state.kind === 'posts') {
-          return { text: 'Для сбора постов откройте страницу профиля', tone: 'idle' };
+        if (state.kind !== 'members') {
+          return {
+            text: state.kind === 'comments'
+              ? 'Для сбора комментариев откройте страницу профиля'
+              : 'Для сбора постов откройте страницу профиля',
+            tone: 'idle'
+          };
         }
         return url.indexOf('/members') !== -1
           ? { text: 'Страница участников. Запустите сбор.', tone: 'ok' }
@@ -526,12 +533,17 @@
         if (state.kind === 'members') {
           return { text: 'Для сбора участников откройте страницу группы', tone: 'idle' };
         }
+        if (state.kind === 'comments') {
+          return { text: 'Запустите сбор и раскрывайте комментарии под постами', tone: 'ok' };
+        }
         return { text: 'Страница профиля. Запустите сбор постов.', tone: 'ok' };
       }
       return {
         text: state.kind === 'members'
           ? 'Откройте страницу группы Facebook'
-          : 'Откройте страницу профиля Facebook',
+          : state.kind === 'comments'
+            ? 'Откройте страницу профиля для сбора комментариев'
+            : 'Откройте страницу профиля Facebook',
         tone: 'idle'
       };
     }
@@ -542,14 +554,18 @@
     }
 
     function setKind(kind) {
-      state.kind = kind === 'posts' ? 'posts' : 'members';
+      state.kind = kind === 'posts' || kind === 'comments' ? kind : 'members';
 
-      // Посты собираются только при ручной прокрутке: автопрокрутка
-      // на профиле проскакивает ленту и не успевает загрузить посты.
-      els.autoBtn.style.display = state.kind === 'posts' ? 'none' : '';
-      els.footerHint.textContent = state.kind === 'posts'
-        ? 'Excel дополнительно содержит данные профиля'
-        : 'CSV и Excel содержат текущую выборку';
+      // Посты и комментарии собираются только при ручной прокрутке:
+      // автопрокрутка на профиле проскакивает ленту.
+      const manualOnly = state.kind !== 'members';
+      els.autoBtn.style.display = manualOnly ? 'none' : '';
+      els.footerHint.textContent =
+        state.kind === 'posts'
+          ? 'Excel дополнительно содержит данные профиля'
+          : state.kind === 'comments'
+            ? 'Комментарии собираются при раскрытии постов'
+            : 'CSV и Excel содержат текущую выборку';
 
       // Переключение вкладки не должно продолжать сбор в прежнем режиме.
       if (state.session) {
@@ -622,9 +638,14 @@
 
       const url = webview.getURL();
 
-      if (kind === 'posts') {
+      if (kind === 'posts' || kind === 'comments') {
         if (!isProfileUrl(url)) {
-          setStatus('Сбор постов доступен только на странице профиля', 'error');
+          setStatus(
+            kind === 'comments'
+              ? 'Сбор комментариев доступен только на странице профиля'
+              : 'Сбор постов доступен только на странице профиля',
+            'error'
+          );
           return;
         }
       } else if (!isGroupUrl(url)) {
@@ -632,8 +653,8 @@
         return;
       }
 
-      // Для постов автоскролл отключён всегда — только ручная прокрутка.
-      const effectiveMode = kind === 'posts' ? 'manual' : mode;
+      // Для постов и комментариев автоскролл отключён — только ручная прокрутка.
+      const effectiveMode = kind === 'members' ? mode : 'manual';
 
       try {
         const script = await window.api.getScript(kind, effectiveMode);
@@ -644,9 +665,11 @@
         els.stopBtn.disabled = effectiveMode !== 'auto';
 
         setStatus(
-          effectiveMode === 'auto'
-            ? 'Сбор запущен, страница прокручивается автоматически'
-            : 'Сбор запущен. Прокручивайте страницу вручную',
+          kind === 'comments'
+            ? 'Сбор запущен. Раскрывайте комментарии под постами'
+            : effectiveMode === 'auto'
+              ? 'Сбор запущен, страница прокручивается автоматически'
+              : 'Сбор запущен. Прокручивайте страницу вручную',
           'active'
         );
       } catch (error) {
@@ -674,8 +697,9 @@
         );
         state.scrolling = false;
         els.stopBtn.disabled = true;
-        if (state.kind === 'posts') setCounts(state.counts.members, 0);
-        else setCounts(0, state.counts.posts);
+        if (state.kind === 'posts') setCounts(null, 0);
+        else if (state.kind === 'comments') setCounts(null, null, 0);
+        else setCounts(0);
         setStatus('Данные сброшены', 'idle');
       } catch (error) {
         setStatus('Не удалось сбросить данные: ' + error.message, 'error');
@@ -683,8 +707,19 @@
     }
 
     async function readRows() {
-      const variable = state.kind === 'posts' ? '__fbPosts' : '__fbMembers';
-      const raw = await webview.executeJavaScript('JSON.stringify(window.' + variable + ' || [])');
+      let expression;
+
+      if (state.kind === 'comments') {
+        // Перед экспортом подставляем текст и ссылку поста, если пост
+        // успели собрать позже комментария.
+        expression =
+          'JSON.stringify((window.__fbsoftCollectComments ? window.__fbsoftCollectComments() : window.__fbComments) || [])';
+      } else {
+        const variable = state.kind === 'posts' ? '__fbPosts' : '__fbMembers';
+        expression = 'JSON.stringify(window.' + variable + ' || [])';
+      }
+
+      const raw = await webview.executeJavaScript(expression);
       try {
         const rows = JSON.parse(raw);
         return Array.isArray(rows) ? rows : [];
@@ -758,7 +793,7 @@
         state.session = false;
         state.scrolling = false;
         els.stopBtn.disabled = true;
-        setCounts(0, 0);
+        setCounts(0, 0, 0);
         setStatus('Сессия очищена, выполняется перезагрузка…', 'idle');
         webview.reload();
       } catch (error) {
@@ -777,11 +812,16 @@
         const snapshot = await webview.executeJavaScript(`({
           members: (window.__fbMembers || []).length,
           posts: (window.__fbPosts || []).length,
+          comments: (window.__fbComments || []).length,
           scrolling: !!(window.__fbsoftStatus && window.__fbsoftStatus().scrolling)
         })`);
 
         if (!snapshot) return;
-        setCounts(Math.max(0, snapshot.members - 1), Math.max(0, snapshot.posts - 1));
+        setCounts(
+          Math.max(0, snapshot.members - 1),
+          Math.max(0, snapshot.posts - 1),
+          Math.max(0, snapshot.comments - 1)
+        );
 
         if (snapshot.scrolling !== state.scrolling) {
           state.scrolling = snapshot.scrolling;
@@ -813,7 +853,7 @@
 
       webview.addEventListener('did-navigate', (event) => {
         updateAddress(event.url);
-        setCounts(0, 0);
+        setCounts(0, 0, 0);
         state.scrolling = false;
         els.stopBtn.disabled = true;
 
