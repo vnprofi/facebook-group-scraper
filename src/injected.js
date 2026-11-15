@@ -38,6 +38,7 @@
   window.__fbPosts = window.__fbPosts || [POST_HEADERS.slice()];
   window.__fbMemberIds = window.__fbMemberIds || Object.create(null);
   window.__fbPostIds = window.__fbPostIds || Object.create(null);
+  window.__fbProfile = window.__fbProfile || [];
 
   // Скрипт может внедряться повторно — перехватчики ставим только один раз.
   if (window.__fbsoftInstalled) return;
@@ -134,6 +135,201 @@
       }
     }
     return payloads;
+  }
+
+  // ---------------------------------------------------------------------
+  // Шапка профиля
+  //
+  // Набор полей у каждого профиля свой, поэтому собираем только то, что
+  // реально отрисовано на странице, и отдаём список пар «поле — значение».
+  // ---------------------------------------------------------------------
+
+  function cleanText(value) {
+    return String(value == null ? '' : value)
+      .replace(/\u00a0/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function cleanLines(value) {
+    return String(value == null ? '' : value)
+      .replace(/\u00a0/g, ' ')
+      .split(/\n+/)
+      .map(function (line) { return line.replace(/\s+/g, ' ').trim(); })
+      .filter(function (line) { return !!line; });
+  }
+
+  function metaContent(name) {
+    var el =
+      document.querySelector('meta[property="' + name + '"]') ||
+      document.querySelector('meta[name="' + name + '"]');
+    return el ? cleanText(el.getAttribute('content')) : '';
+  }
+
+  function profileUrl() {
+    var canonical = document.querySelector('link[rel="canonical"]');
+    var raw = (canonical && canonical.href) || metaContent('og:url') || location.href;
+
+    try {
+      var url = new URL(raw, location.origin);
+      var id = url.searchParams.get('id');
+      if (url.pathname === '/profile.php' && id) {
+        return 'https://www.facebook.com/profile.php?id=' + id;
+      }
+      return url.origin + url.pathname.replace(/\/+$/, '');
+    } catch (e) {
+      return location.href.split('?')[0];
+    }
+  }
+
+  function profileIdFromUrl(url) {
+    try {
+      var parsed = new URL(url, location.origin);
+      var id = parsed.searchParams.get('id');
+      if (id) return id;
+      var people = parsed.pathname.match(/\/people\/[^/]+\/(\d+)/);
+      if (people) return people[1];
+    } catch (e) { /* ignore */ }
+    return '';
+  }
+
+  function headerWrapper() {
+    var actions = document.querySelector('[data-pagelet="ProfileActions"]');
+    return actions && actions.parentElement ? actions.parentElement : null;
+  }
+
+  function headerActions() {
+    return document.querySelector('[data-pagelet="ProfileActions"]');
+  }
+
+  function cleanCount(value) {
+    var text = cleanText(value);
+    // «5,4 тыс. — подписчики» / «5.4K followers» → «5,4 тыс.» / «5.4K»
+    text = text.replace(/\s*[—–-]\s*.*$/, '');
+    text = text.replace(/\s*(подписчики|подписчиков|подписки|подписок|друзей|друзья|friends|followers|following)\s*$/i, '');
+    text = text.trim();
+    return /\d/.test(text) ? text : '';
+  }
+
+  function findAnchorByParam(param) {
+    var links = document.querySelectorAll('a[href]');
+    for (var i = 0; i < links.length; i++) {
+      var text = cleanText(links[i].innerText || links[i].textContent);
+      if (!/\d/.test(text)) continue; // аватарки друзей тоже ведут на sk=followers
+      try {
+        var url = new URL(links[i].href, location.origin);
+        if (url.searchParams.get('sk') === param) return links[i];
+      } catch (e) { /* ignore */ }
+    }
+    return null;
+  }
+
+  function friendsCount() {
+    var links = document.querySelectorAll('a[href*="/friends"], a[href*="sk=friends"]');
+    for (var i = 0; i < links.length; i++) {
+      var text = cleanCount(links[i].innerText || links[i].textContent);
+      if (text) return text;
+    }
+    return '';
+  }
+
+  function nameFromHeader(wrapper, actions) {
+    if (!wrapper) return '';
+    var buttons = wrapper.querySelectorAll('[role="button"]');
+    for (var i = 0; i < buttons.length; i++) {
+      if (actions && actions.contains(buttons[i])) continue;
+      var text = cleanText(buttons[i].innerText || buttons[i].textContent);
+      if (text && text.length <= 80) return text;
+    }
+    return '';
+  }
+
+  function bioFromHeader(wrapper, actions) {
+    if (!wrapper) return '';
+    var spans = wrapper.querySelectorAll('span[dir="auto"]');
+
+    for (var i = 0; i < spans.length; i++) {
+      var el = spans[i];
+      if (actions && actions.contains(el)) continue;
+      if (el.closest('[role="button"]')) continue;
+      if (el.closest('a')) continue;
+
+      var hasBreak = !!el.querySelector('br');
+      var hasExternal = !!el.querySelector(
+        'a[href*="l.facebook.com/l.php"], a[href*="t.me/"], a[href*="instagram.com"], a[href*="calendly.com"]'
+      );
+      if (!hasBreak && !hasExternal) continue;
+
+      var text = cleanLines(el.innerText || el.textContent).join(' · ');
+      if (text) return text;
+    }
+
+    return '';
+  }
+
+  function detailsFromHeader(wrapper) {
+    if (!wrapper) return '';
+
+    var labels = ['Актуальная информация', 'Details', 'Intro'];
+    var node = null;
+    for (var i = 0; i < labels.length; i++) {
+      node = wrapper.querySelector('[aria-label="' + labels[i] + '"]');
+      if (node) break;
+    }
+    if (!node) return '';
+
+    var items = node.querySelectorAll('[role="listitem"]');
+    var out = [];
+    for (var j = 0; j < items.length; j++) {
+      var text = cleanText(items[j].innerText || items[j].textContent);
+      if (!text || text === '·') continue;
+      if (out.indexOf(text) === -1) out.push(text);
+    }
+
+    if (!out.length) {
+      var all = cleanText(node.innerText || node.textContent);
+      return all === '·' ? '' : all;
+    }
+    return out.join(' · ');
+  }
+
+  function collectProfileHeader() {
+    var fields = [];
+    var seen = Object.create(null);
+
+    function add(key, value) {
+      var text = cleanText(value);
+      if (!text || seen[key]) return;
+      seen[key] = true;
+      fields.push([key, text]);
+    }
+
+    var actions = headerActions();
+    var wrapper = headerWrapper();
+
+    var name = metaContent('og:title') || nameFromHeader(wrapper, actions);
+    if (!name) {
+      name = cleanText(document.title || '').split('|')[0].split(' - ')[0];
+    }
+    name = name.replace(/\s*[|\-–]\s*Facebook\s*$/i, '').trim();
+    add('Имя', name);
+
+    var url = profileUrl();
+    add('Ссылка', url);
+    add('ID', profileIdFromUrl(url));
+
+    var followers = findAnchorByParam('followers');
+    if (followers) add('Подписчики', cleanCount(followers.innerText || followers.textContent));
+
+    var following = findAnchorByParam('following');
+    if (following) add('Подписки', cleanCount(following.innerText || following.textContent));
+
+    add('Друзья', friendsCount());
+    add('О себе', bioFromHeader(wrapper, actions));
+    add('Актуальная информация', detailsFromHeader(wrapper));
+
+    window.__fbProfile = fields;
+    return fields;
   }
 
   // ---------------------------------------------------------------------
@@ -609,6 +805,12 @@
   }
 
   function startAutoScroll() {
+    // Посты собираются только при ручной прокрутке.
+    if (state.kind === 'posts') {
+      stopScroll();
+      return;
+    }
+
     stopScroll(); // инвалидирует предыдущий цикл
     var run = scrollRun;
     state.stopped = false;
@@ -633,7 +835,11 @@
     ensureOverlay();
     renderOverlay();
 
-    if (mode === 'auto') {
+    if (state.kind === 'posts') {
+      collectProfileHeader();
+    }
+
+    if (mode === 'auto' && state.kind === 'members') {
       startAutoScroll();
     } else {
       stopScroll();
@@ -654,10 +860,15 @@
     };
   };
 
+  window.__fbsoftCollectProfile = function () {
+    return collectProfileHeader();
+  };
+
   window.__fbsoftReset = function (kind) {
     if (kind === 'posts') {
       window.__fbPosts = [POST_HEADERS.slice()];
       window.__fbPostIds = Object.create(null);
+      window.__fbProfile = [];
     } else {
       window.__fbMembers = [MEMBER_HEADERS.slice()];
       window.__fbMemberIds = Object.create(null);
