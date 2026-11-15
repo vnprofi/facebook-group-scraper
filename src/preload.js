@@ -1,14 +1,10 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-contextBridge.exposeInMainWorld('electronAPI', {
-  saveCSV: (data) => ipcRenderer.invoke('save-csv', data),
-  saveExcel: (rows) => ipcRenderer.invoke('save-excel', rows),
-  getScript: () => ipcRenderer.invoke('get-script'),
+contextBridge.exposeInMainWorld('api', {
+  platform: process.platform,
+  getScript: (kind, mode) => ipcRenderer.invoke('get-script', { kind, mode }),
+  saveCsv: (content, kind) => ipcRenderer.invoke('save-csv', { content, kind }),
+  saveExcel: (rows, kind) => ipcRenderer.invoke('save-excel', { rows, kind }),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
-  scrapeLinks: () => ipcRenderer.invoke('scrape-links'),
-  logout: () => ipcRenderer.invoke('logout'),
-  onScriptReady: () => {
-    // Уведомляем renderer, что скрипт готов
-    window.postMessage({ type: 'SCRIPT_READY' }, '*');
-  }
+  logout: () => ipcRenderer.invoke('logout')
 });
