@@ -4,8 +4,10 @@
  * Скрипт выполняется внутри страницы Facebook (webview). Он перехватывает
  * ответы GraphQL и складывает данные в глобальные массивы:
  *
- *   window.__fbMembers — участники групп
- *   window.__fbPosts   — посты из ленты (профиль пользователя)
+ *   window.__fbMembers  — участники групп
+ *   window.__fbPosts    — посты из ленты (профиль пользователя)
+ *   window.__fbComments — комментарии, загруженные при раскрытии постов
+ *   window.__fbProfile  — шапка профиля (пары «поле — значение»)
  *
  * Экспорт в CSV/XLSX выполняет приложение (main process), скрипт только
  * собирает данные и управляет прокруткой.
@@ -31,13 +33,42 @@
     'Ссылка на автора',
     'Текст поста',
     'Ссылка на пост',
-    'Медиа'
+    'Медиа',
+    'Реакции',
+    'Реакции (по типам)',
+    'Комментарии',
+    'Репосты'
   ];
+
+  var COMMENT_HEADERS = [
+    'ID комментария',
+    'Пост ID',
+    'Текст поста',
+    'Ссылка на пост',
+    'Автор',
+    'Ссылка на автора',
+    'Текст комментария',
+    'Дата',
+    'Реакции',
+    'Ссылка на комментарий'
+  ];
+
+  var REACTION_NAMES = {
+    '1635855486666999': 'Нравится',
+    '1678524932434102': 'Супер',
+    '613557422527858': 'Поддерживаю',
+    '115940658764963': 'Ха-ха',
+    '478547315650144': 'Удивление',
+    '908563459236466': 'Печаль',
+    '444813342392137': 'Злость'
+  };
 
   window.__fbMembers = window.__fbMembers || [MEMBER_HEADERS.slice()];
   window.__fbPosts = window.__fbPosts || [POST_HEADERS.slice()];
+  window.__fbComments = window.__fbComments || [COMMENT_HEADERS.slice()];
   window.__fbMemberIds = window.__fbMemberIds || Object.create(null);
   window.__fbPostIds = window.__fbPostIds || Object.create(null);
+  window.__fbCommentIds = window.__fbCommentIds || Object.create(null);
   window.__fbProfile = window.__fbProfile || [];
 
   // Скрипт может внедряться повторно — перехватчики ставим только один раз.
@@ -193,13 +224,38 @@
     return '';
   }
 
-  function headerWrapper() {
-    var actions = document.querySelector('[data-pagelet="ProfileActions"]');
-    return actions && actions.parentElement ? actions.parentElement : null;
-  }
-
   function headerActions() {
     return document.querySelector('[data-pagelet="ProfileActions"]');
+  }
+
+  // Блок действий, имя, счётчики, биография и «Актуальная информация»
+  // лежат в разных ветках одной шапки. Общий контейнер ищем от блока
+  // действий: сначала по блоку «Актуальная информация» (он есть у
+  // большинства профилей), затем по ссылке на подписчиков.
+  function headerWrapper() {
+    var actions = headerActions();
+    if (!actions) return null;
+
+    var details = document.querySelector(
+      '[aria-label="Актуальная информация"], [aria-label="Details"], [aria-label="Intro"]'
+    );
+
+    if (details) {
+      var node = actions;
+      for (var i = 0; i < 10 && node.parentElement; i++) {
+        node = node.parentElement;
+        if (node.contains(details)) return node;
+      }
+    }
+
+    var fallback = actions;
+    for (var j = 0; j < 8 && fallback.parentElement; j++) {
+      fallback = fallback.parentElement;
+      if (fallback.querySelector('a[href*="/followers"], a[href*="sk=followers"]')) {
+        return fallback;
+      }
+    }
+    return actions.parentElement;
   }
 
   function cleanCount(value) {
@@ -218,7 +274,15 @@
       if (!/\d/.test(text)) continue; // аватарки друзей тоже ведут на sk=followers
       try {
         var url = new URL(links[i].href, location.origin);
-        if (url.searchParams.get('sk') === param) return links[i];
+        if (param === 'followers') {
+          if (url.searchParams.get('sk') === 'followers') return links[i];
+          if (/\/followers\/?$/i.test(url.pathname)) return links[i];
+        } else if (param === 'following') {
+          if (url.searchParams.get('sk') === 'following') return links[i];
+          if (/\/following\/?$/i.test(url.pathname)) return links[i];
+        } else if (url.searchParams.get('sk') === param) {
+          return links[i];
+        }
       } catch (e) { /* ignore */ }
     }
     return null;
@@ -235,36 +299,45 @@
 
   function nameFromHeader(wrapper, actions) {
     if (!wrapper) return '';
+    var skip = /^(друзья|сообщение|поиск|смотреть рекомендации|добавить в друзья|подписаться|отписаться|написать|ещё|friends|message|search|follow|following|add friend)\b/i;
     var buttons = wrapper.querySelectorAll('[role="button"]');
     for (var i = 0; i < buttons.length; i++) {
       if (actions && actions.contains(buttons[i])) continue;
+      if (buttons[i].closest('[aria-label="Актуальная информация"], [aria-label="Details"], [aria-label="Intro"]')) continue;
       var text = cleanText(buttons[i].innerText || buttons[i].textContent);
-      if (text && text.length <= 80) return text;
+      if (!text || text.length > 80) continue;
+      if (skip.test(text)) continue;
+      return text;
     }
     return '';
   }
 
-  function bioFromHeader(wrapper, actions) {
+  function bioFromHeader(wrapper, actions, name) {
     if (!wrapper) return '';
     var spans = wrapper.querySelectorAll('span[dir="auto"]');
+    var fallback = '';
 
     for (var i = 0; i < spans.length; i++) {
       var el = spans[i];
       if (actions && actions.contains(el)) continue;
       if (el.closest('[role="button"]')) continue;
       if (el.closest('a')) continue;
+      if (el.querySelector('[role="button"]')) continue;
+      if (el.querySelector('a[href*="/followers"], a[href*="sk=followers"], a[href*="/following"], a[href*="sk=following"]')) continue;
+      if (el.closest('[aria-label="Актуальная информация"], [aria-label="Details"], [aria-label="Intro"]')) continue;
 
-      var hasBreak = !!el.querySelector('br');
-      var hasExternal = !!el.querySelector(
-        'a[href*="l.facebook.com/l.php"], a[href*="t.me/"], a[href*="instagram.com"], a[href*="calendly.com"]'
-      );
-      if (!hasBreak && !hasExternal) continue;
+      var text = cleanLines(el.innerText || el.textContent).join(' · ').trim();
+      if (!text || text === name) continue;
+      if (/^(друзья|сообщение|поиск|смотреть рекомендации|подписчики|подписки|friends|message|search)$/i.test(text)) continue;
+      if (!/[A-Za-zА-Яа-яЁё0-9]/.test(text)) continue;
 
-      var text = cleanLines(el.innerText || el.textContent).join(' · ');
-      if (text) return text;
+      // Приоритет — биография с переносами строк или ссылками,
+      // иначе берём первый осмысленный текст под именем.
+      if (el.querySelector('br') || el.querySelector('a')) return text;
+      if (!fallback && /\s/.test(text)) fallback = text;
     }
 
-    return '';
+    return fallback;
   }
 
   function detailsFromHeader(wrapper) {
@@ -293,6 +366,35 @@
     return out.join(' · ');
   }
 
+  function isGenericName(value) {
+    var text = cleanText(value);
+    if (!text) return true;
+    return /^(\(\d+\+?\)\s*)?facebook$/i.test(text) || /^(facebook|log\s*in|войти|регистрация)$/i.test(text);
+  }
+
+  // У коротких адресов (facebook.com/username) числового id в URL нет,
+  // поэтому берём его из уже собранных постов — самые частые авторы.
+  function idFromCollectedPosts() {
+    var rows = window.__fbPosts || [];
+    var counts = Object.create(null);
+    var best = '';
+    var bestCount = 0;
+
+    for (var i = 1; i < rows.length; i++) {
+      var link = rows[i] && rows[i][3] ? String(rows[i][3]) : '';
+      var match = link.match(/[?&]id=(\d+)/);
+      if (!match) continue;
+      var id = match[1];
+      counts[id] = (counts[id] || 0) + 1;
+      if (counts[id] > bestCount) {
+        bestCount = counts[id];
+        best = id;
+      }
+    }
+
+    return best;
+  }
+
   function collectProfileHeader() {
     var fields = [];
     var seen = Object.create(null);
@@ -307,16 +409,22 @@
     var actions = headerActions();
     var wrapper = headerWrapper();
 
-    var name = metaContent('og:title') || nameFromHeader(wrapper, actions);
-    if (!name) {
-      name = cleanText(document.title || '').split('|')[0].split(' - ')[0];
+    var name = nameFromHeader(wrapper, actions);
+    if (isGenericName(name)) {
+      var ogTitle = metaContent('og:title');
+      name = isGenericName(ogTitle) ? '' : ogTitle;
     }
-    name = name.replace(/\s*[|\-–]\s*Facebook\s*$/i, '').trim();
+    if (isGenericName(name)) {
+      var docTitle = cleanText(document.title || '').replace(/^\(\d+\+?\)\s*/, '');
+      var firstPart = docTitle.split('|')[0].split(' - ')[0].trim();
+      name = isGenericName(firstPart) ? '' : firstPart;
+    }
+    name = cleanText(name).replace(/\s*[|\-–]\s*Facebook\s*$/i, '').trim();
     add('Имя', name);
 
     var url = profileUrl();
     add('Ссылка', url);
-    add('ID', profileIdFromUrl(url));
+    add('ID', profileIdFromUrl(url) || idFromCollectedPosts());
 
     var followers = findAnchorByParam('followers');
     if (followers) add('Подписчики', cleanCount(followers.innerText || followers.textContent));
@@ -325,7 +433,7 @@
     if (following) add('Подписки', cleanCount(following.innerText || following.textContent));
 
     add('Друзья', friendsCount());
-    add('О себе', bioFromHeader(wrapper, actions));
+    add('О себе', bioFromHeader(wrapper, actions, name));
     add('Актуальная информация', detailsFromHeader(wrapper));
 
     window.__fbProfile = fields;
@@ -446,6 +554,87 @@
     return '';
   }
 
+  // ---------------------------------------------------------------------
+  // Счётчики реакций, комментариев и репостов
+  // ---------------------------------------------------------------------
+
+  function countText(value) {
+    if (value == null) return '';
+    if (typeof value === 'number') return String(value);
+    if (typeof value === 'string') return value.trim();
+    if (typeof value !== 'object') return '';
+
+    // count_reduced — уже готовая строка («12», «1,2 тыс.»).
+    if (value.count_reduced != null && value.count_reduced !== '') {
+      return String(value.count_reduced).trim();
+    }
+    if (typeof value.count === 'number') return String(value.count);
+    if (typeof value.count === 'string' && value.count.trim()) return value.count.trim();
+    if (typeof value.total_count === 'number') return String(value.total_count);
+    if (typeof value.reaction_count === 'number') return String(value.reaction_count);
+    return '';
+  }
+
+  function reactionBreakdown(feedback) {
+    var top = feedback && feedback.top_reactions;
+    if (!top || typeof top !== 'object') return '';
+
+    var items = [];
+    if (Array.isArray(top.edges)) items = top.edges;
+    else if (Array.isArray(top.summary)) items = top.summary;
+
+    var parts = [];
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i] || {};
+      var node = item.node || item.reaction || {};
+      var id = node.id ? String(node.id) : '';
+      var count = countText(item);
+      if (!count) continue;
+      var name = REACTION_NAMES[id] || id || 'Реакция';
+      parts.push(name + ' ' + count);
+    }
+
+    return parts.join(' · ');
+  }
+
+  function postStats(feedbacks) {
+    var reactions = '';
+    var breakdown = '';
+    var comments = '';
+    var shares = '';
+
+    for (var i = 0; i < feedbacks.length; i++) {
+      var feedback = feedbacks[i];
+      if (!feedback || typeof feedback !== 'object') continue;
+
+      if (!reactions) {
+        reactions =
+          countText(feedback.unified_reactors) ||
+          countText(feedback.reactors) ||
+          countText(feedback.reaction_count);
+      }
+      if (!breakdown) breakdown = reactionBreakdown(feedback);
+
+      if (!comments) {
+        var rendering = feedback.comment_rendering_instance_for_feed_location;
+        comments = countText(rendering && rendering.comments);
+        if (!comments) comments = countText(feedback.total_comment_count);
+        if (!comments) comments = countText(feedback.comment_count);
+      }
+
+      if (!shares) {
+        shares =
+          countText(feedback.share_count) ||
+          countText(feedback.reshares) ||
+          countText(feedback.reshare_count);
+      }
+
+      if (reactions && breakdown && comments && shares) break;
+    }
+
+    return [reactions, breakdown, comments, shares];
+  }
+
   function collectStoryNodes(value, out, depth) {
     if (!value || typeof value !== 'object' || depth > 30) return;
 
@@ -509,6 +698,12 @@
 
     var media = unique(imagesFromAttachments(attachments)).slice(0, 5).join(' | ');
 
+    var feedbacks = [];
+    if (node.feedback) feedbacks.push(node.feedback);
+    if (contentStory.feedback) feedbacks.push(contentStory.feedback);
+    if (messageStory.feedback) feedbacks.push(messageStory.feedback);
+    var stats = postStats(feedbacks);
+
     var id = node.post_id ? String(node.post_id) : String(node.id || link);
     if (!id) return null;
     if (!text && !media && !link) return null;
@@ -520,7 +715,11 @@
       authorLink,
       text,
       link,
-      media
+      media,
+      stats[0],
+      stats[1],
+      stats[2],
+      stats[3]
     ];
   }
 
@@ -543,6 +742,154 @@
     }
 
     return added;
+  }
+
+  // ---------------------------------------------------------------------
+  // Комментарии
+  //
+  // Комментарии приходят отдельными GraphQL-ответами при раскрытии поста.
+  // Узел комментария содержит id в base64 («comment:POSTID_COMMENTID»),
+  // автора, текст, время и счётчик реакций.
+  // ---------------------------------------------------------------------
+
+  var COMMENT_RE = /^comment:(\d+)_(\d+)$/;
+
+  function decodeCommentId(value) {
+    var raw = String(value || '');
+    if (!raw) return null;
+
+    var direct = raw.match(COMMENT_RE);
+    if (direct) return { postId: direct[1], commentId: direct[2] };
+
+    var plain = raw.match(/^(\d+)_(\d+)$/);
+    if (plain) return { postId: plain[1], commentId: plain[2] };
+
+    if (/^[A-Za-z0-9+/=_-]+$/.test(raw)) {
+      try {
+        var decoded = atob(raw.replace(/-/g, '+').replace(/_/g, '/'));
+        var match = decoded.match(COMMENT_RE);
+        if (match) return { postId: match[1], commentId: match[2] };
+      } catch (e) { /* не base64 — пропускаем */ }
+    }
+
+    return null;
+  }
+
+  function findPostRow(postId) {
+    if (!postId) return null;
+    var rows = window.__fbPosts || [];
+    for (var i = 1; i < rows.length; i++) {
+      if (rows[i] && String(rows[i][0]) === String(postId)) return rows[i];
+    }
+    return null;
+  }
+
+  function isCommentNode(value) {
+    if (!value || typeof value !== 'object') return false;
+    if (!value.body || typeof value.body !== 'object') return false;
+    if (!value.author || typeof value.author !== 'object') return false;
+    return value.__typename === 'Comment' || !!value.legacy_fbid;
+  }
+
+  function collectCommentNodes(value, out, depth) {
+    if (!value || typeof value !== 'object' || depth > 40) return;
+
+    if (Array.isArray(value)) {
+      for (var i = 0; i < value.length; i++) collectCommentNodes(value[i], out, depth + 1);
+      return;
+    }
+
+    if (isCommentNode(value)) out.push(value);
+
+    for (var key in value) {
+      if (!Object.prototype.hasOwnProperty.call(value, key)) continue;
+      var child = value[key];
+      if (child && typeof child === 'object') collectCommentNodes(child, out, depth + 1);
+    }
+  }
+
+  function commentToRow(comment) {
+    var author = comment.author || {};
+    var authorId = author.id ? String(author.id) : '';
+    var authorName = author.name ? String(author.name) : '';
+    var authorLink = absoluteUrl(author.url);
+    if (!authorLink && authorId) authorLink = 'https://www.facebook.com/profile.php?id=' + authorId;
+
+    var text = comment.body && typeof comment.body.text === 'string' ? comment.body.text : '';
+    if (!text) return null;
+
+    var feedback = comment.feedback || {};
+    var ids = decodeCommentId(comment.id) || {};
+    var commentId = comment.legacy_fbid ? String(comment.legacy_fbid) : (ids.commentId || '');
+    var postId = ids.postId || '';
+
+    var permalink = absoluteUrl(feedback.url);
+    if (feedback.url) {
+      try {
+        var fbUrl = new URL(feedback.url, location.origin);
+        if (!postId) postId = fbUrl.searchParams.get('story_fbid') || '';
+      } catch (e) { /* ignore */ }
+    }
+    if (!permalink && postId && commentId) {
+      permalink = 'https://www.facebook.com/' + postId + '?comment_id=' + commentId;
+    }
+
+    var key = commentId || String(comment.id || '') || (postId + '|' + authorName + '|' + text);
+    if (!key || window.__fbCommentIds[key]) return null;
+
+    var reactions =
+      countText(comment.reactors) ||
+      countText(feedback.reactors) ||
+      countText(feedback.reaction_count) ||
+      countText(feedback.unified_reactors);
+
+    window.__fbCommentIds[key] = true;
+    return [
+      commentId,
+      postId,
+      '',
+      '',
+      authorName,
+      authorLink,
+      text,
+      formatDate(comment.created_time),
+      reactions,
+      permalink
+    ];
+  }
+
+  function parseComments(text) {
+    var payloads = parsePayloads(text);
+    var added = 0;
+
+    for (var i = 0; i < payloads.length; i++) {
+      var nodes = [];
+      collectCommentNodes(payloads[i], nodes, 0);
+
+      for (var j = 0; j < nodes.length; j++) {
+        var row = commentToRow(nodes[j]);
+        if (!row) continue;
+        window.__fbComments.push(row);
+        added++;
+      }
+    }
+
+    return added;
+  }
+
+  // Текст и ссылку поста могли собрать позже самого комментария,
+  // поэтому подставляем их при экспорте.
+  function refreshCommentRows() {
+    var rows = window.__fbComments || [];
+    for (var i = 1; i < rows.length; i++) {
+      var row = rows[i];
+      if (!row) continue;
+      var post = findPostRow(row[1]);
+      if (!post) continue;
+      if (!row[2]) row[2] = post[4] || '';
+      if (!row[3]) row[3] = post[5] || '';
+    }
+    return rows;
   }
 
   // ---------------------------------------------------------------------
@@ -570,6 +917,14 @@
           text.indexOf('"__isFeedUnit":"Story"') !== -1 ||
           text.indexOf('"timeline_list_feed_units"') !== -1) {
         parsePosts(text);
+      }
+    } catch (e) { /* см. выше */ }
+
+    try {
+      if (text.indexOf('"__typename":"Comment"') !== -1 ||
+          text.indexOf('"legacy_fbid"') !== -1 ||
+          text.indexOf('CommentsListComponentsPaginationQuery') !== -1) {
+        parseComments(text);
       }
     } catch (e) { /* см. выше */ }
 
@@ -623,7 +978,15 @@
   // ---------------------------------------------------------------------
 
   function activeList() {
-    return state.kind === 'posts' ? window.__fbPosts : window.__fbMembers;
+    if (state.kind === 'posts') return window.__fbPosts;
+    if (state.kind === 'comments') return window.__fbComments;
+    return window.__fbMembers;
+  }
+
+  function overlayLabel() {
+    if (state.kind === 'posts') return 'Посты:';
+    if (state.kind === 'comments') return 'Комментарии:';
+    return 'Участники группы:';
   }
 
   function currentCount() {
@@ -667,7 +1030,7 @@
 
     var label = document.createElement('span');
     label.id = 'fbsoft-overlay-label';
-    label.textContent = 'Участники группы:';
+    label.textContent = overlayLabel();
 
     var count = document.createElement('b');
     count.id = 'fbsoft-overlay-count';
@@ -723,7 +1086,7 @@
   function renderOverlay() {
     if (!state.box || !document.body) return;
     var label = document.getElementById('fbsoft-overlay-label');
-    if (label) label.textContent = state.kind === 'posts' ? 'Посты:' : 'Участники группы:';
+    if (label) label.textContent = overlayLabel();
     if (state.countEl) state.countEl.textContent = String(currentCount());
     if (state.stopEl) state.stopEl.style.display = state.scrolling ? 'inline-block' : 'none';
   }
@@ -805,8 +1168,8 @@
   }
 
   function startAutoScroll() {
-    // Посты собираются только при ручной прокрутке.
-    if (state.kind === 'posts') {
+    // Посты и комментарии собираются только при ручной прокрутке.
+    if (state.kind === 'posts' || state.kind === 'comments') {
       stopScroll();
       return;
     }
@@ -831,7 +1194,10 @@
   // ---------------------------------------------------------------------
 
   window.__fbsoftStart = function (kind, mode) {
-    state.kind = kind === 'posts' ? 'posts' : 'members';
+    if (kind === 'posts') state.kind = 'posts';
+    else if (kind === 'comments') state.kind = 'comments';
+    else state.kind = 'members';
+
     ensureOverlay();
     renderOverlay();
 
@@ -856,7 +1222,8 @@
     return {
       kind: state.kind,
       scrolling: state.scrolling,
-      count: currentCount()
+      count: currentCount(),
+      comments: Math.max(0, (window.__fbComments || []).length - 1)
     };
   };
 
@@ -864,17 +1231,24 @@
     return collectProfileHeader();
   };
 
+  window.__fbsoftCollectComments = function () {
+    return refreshCommentRows();
+  };
+
   window.__fbsoftReset = function (kind) {
     if (kind === 'posts') {
       window.__fbPosts = [POST_HEADERS.slice()];
       window.__fbPostIds = Object.create(null);
       window.__fbProfile = [];
+    } else if (kind === 'comments') {
+      window.__fbComments = [COMMENT_HEADERS.slice()];
+      window.__fbCommentIds = Object.create(null);
     } else {
       window.__fbMembers = [MEMBER_HEADERS.slice()];
       window.__fbMemberIds = Object.create(null);
     }
     renderOverlay();
-    console.log('[FBSoft] list reset:', kind === 'posts' ? 'posts' : 'members');
+    console.log('[FBSoft] list reset:', kind);
   };
 
   installInterceptors();
