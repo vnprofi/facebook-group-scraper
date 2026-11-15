@@ -9,6 +9,10 @@
  *   window.__fbComments — комментарии, загруженные при раскрытии постов
  *   window.__fbProfile  — шапка профиля (пары «поле — значение»)
  *
+ * Реакции собираются из ответов подсказки (CometUFI*ReactionIconTooltip*).
+ * У каждого поста и комментария есть feedback.id — по нему реакции
+ * привязываются к нужной строке.
+ *
  * Экспорт в CSV/XLSX выполняет приложение (main process), скрипт только
  * собирает данные и управляет прокруткой.
  */
@@ -37,7 +41,8 @@
     'Реакции',
     'Реакции (по типам)',
     'Комментарии',
-    'Репосты'
+    'Репосты',
+    'Кто отреагировал'
   ];
 
   var COMMENT_HEADERS = [
@@ -45,13 +50,22 @@
     'Пост ID',
     'Текст поста',
     'Ссылка на пост',
+    'Автор поста',
+    'Ссылка на автора поста',
     'Автор',
     'Ссылка на автора',
     'Текст комментария',
     'Дата',
     'Реакции',
-    'Ссылка на комментарий'
+    'Ссылка на комментарий',
+    'Кто отреагировал'
   ];
+
+  // Индексы служебных колонок в строках таблиц.
+  var POST_REACTION_COUNT_COLUMN = 7;
+  var POST_REACTORS_COLUMN = POST_HEADERS.length - 1;
+  var COMMENT_REACTION_COUNT_COLUMN = 10;
+  var COMMENT_REACTORS_COLUMN = COMMENT_HEADERS.length - 1;
 
   var REACTION_NAMES = {
     '1635855486666999': 'Нравится',
@@ -70,6 +84,11 @@
   window.__fbPostIds = window.__fbPostIds || Object.create(null);
   window.__fbCommentIds = window.__fbCommentIds || Object.create(null);
   window.__fbProfile = window.__fbProfile || [];
+
+  // feedback.id → строка поста или комментария.
+  window.__fbFeedbackTargets = window.__fbFeedbackTargets || Object.create(null);
+  // feedback.id → { seen, names[], total } — те, кто поставил реакцию.
+  window.__fbReactions = window.__fbReactions || Object.create(null);
 
   // Скрипт может внедряться повторно — перехватчики ставим только один раз.
   if (window.__fbsoftInstalled) return;
@@ -635,6 +654,153 @@
     return [reactions, breakdown, comments, shares];
   }
 
+  // ---------------------------------------------------------------------
+  // Реакции
+  //
+  // Подсказка при наведении на реакции (CometUFIReactionIconTooltipContentQuery)
+  // возвращает feedback.id и список User. Тот же feedback.id есть у поста
+  // и у комментария, поэтому реакции попадают в нужную строку таблицы.
+  // ---------------------------------------------------------------------
+
+  function looksLikeFeedbackId(value) {
+    if (typeof value !== 'string' || !value) return false;
+    return value.indexOf('feedback:') === 0 || value.indexOf('ZmVlZGJhY2s6') === 0;
+  }
+
+  // Facebook отдаёт id то в base64, то в открытом виде — приводим к одному.
+  function feedbackKey(value) {
+    var raw = String(value || '');
+    if (raw.indexOf('feedback:') === 0) return raw;
+    if (raw.indexOf('ZmVlZGJhY2s6') === 0) {
+      try {
+        var b64 = raw.replace(/-/g, '+').replace(/_/g, '/');
+        while (b64.length % 4) b64 += '=';
+        var decoded = atob(b64);
+        if (decoded.indexOf('feedback:') === 0) return decoded;
+      } catch (e) { /* не base64 */ }
+    }
+    return raw;
+  }
+
+  function hasReactorNodes(value) {
+    return !!(
+      value &&
+      typeof value === 'object' &&
+      value.reactors &&
+      typeof value.reactors === 'object' &&
+      Array.isArray(value.reactors.nodes)
+    );
+  }
+
+  function collectFeedbackNodes(value, out, depth) {
+    if (!value || typeof value !== 'object' || depth > 40) return;
+
+    if (Array.isArray(value)) {
+      for (var i = 0; i < value.length; i++) collectFeedbackNodes(value[i], out, depth + 1);
+      return;
+    }
+
+    if (looksLikeFeedbackId(value.id) && hasReactorNodes(value)) out.push(value);
+
+    for (var key in value) {
+      if (!Object.prototype.hasOwnProperty.call(value, key)) continue;
+      var child = value[key];
+      if (child && typeof child === 'object') collectFeedbackNodes(child, out, depth + 1);
+    }
+  }
+
+  function registerFeedbackTarget(feedback, type, row) {
+    if (!feedback || !feedback.id || !row) return;
+    var key = feedbackKey(feedback.id);
+    window.__fbFeedbackTargets[key] = { type: type, row: row };
+    applyReactionTarget(key);
+  }
+
+  function applyReactionTarget(key) {
+    var target = window.__fbFeedbackTargets[key];
+    var entry = window.__fbReactions[key];
+    if (!target || !target.row || !entry) return;
+
+    if (target.type === 'comment') {
+      target.row[COMMENT_REACTORS_COLUMN] = entry.names.join(', ');
+      if (!target.row[COMMENT_REACTION_COUNT_COLUMN] && entry.total) {
+        target.row[COMMENT_REACTION_COUNT_COLUMN] = entry.total;
+      }
+    } else {
+      target.row[POST_REACTORS_COLUMN] = entry.names.join(', ');
+      if (!target.row[POST_REACTION_COUNT_COLUMN] && entry.total) {
+        target.row[POST_REACTION_COUNT_COLUMN] = entry.total;
+      }
+    }
+  }
+
+  function addReactionUsers(feedback) {
+    if (!feedback || !feedback.id) return;
+
+    var key = feedbackKey(feedback.id);
+    var entry = window.__fbReactions[key];
+    if (!entry) {
+      entry = window.__fbReactions[key] = { seen: Object.create(null), names: [], total: '' };
+    }
+
+    var nodes = feedback.reactors.nodes || [];
+    for (var i = 0; i < nodes.length; i++) {
+      var node = nodes[i] || {};
+      if (node.__typename !== 'User') continue;
+
+      var id = node.id ? String(node.id) : '';
+      var name = cleanText(node.name);
+      if (!id && !name) continue;
+
+      var dedupe = id || name;
+      if (entry.seen[dedupe]) continue;
+      entry.seen[dedupe] = true;
+      entry.names.push(name ? (id ? name + ' (' + id + ')' : name) : id);
+    }
+
+    entry.total =
+      countText(feedback.total_reaction_count) || countText(feedback.reactors) || entry.total;
+
+    applyReactionTarget(key);
+  }
+
+  function parseReactions(text) {
+    var payloads = parsePayloads(text);
+    for (var i = 0; i < payloads.length; i++) {
+      var nodes = [];
+      collectFeedbackNodes(payloads[i], nodes, 0);
+      for (var j = 0; j < nodes.length; j++) addReactionUsers(nodes[j]);
+    }
+  }
+
+  function clearReactions(type) {
+    var keys = Object.keys(window.__fbFeedbackTargets);
+    for (var i = 0; i < keys.length; i++) {
+      var target = window.__fbFeedbackTargets[keys[i]];
+      if (!target || target.type !== type) continue;
+      delete window.__fbFeedbackTargets[keys[i]];
+      delete window.__fbReactions[keys[i]];
+    }
+  }
+
+  function storyFeedbacks(node) {
+    var out = [];
+    if (!node) return out;
+
+    var sections = node.comet_sections || {};
+    var contentStory = (sections.content && sections.content.story) || {};
+    var contentSections = contentStory.comet_sections || {};
+    var messageStory =
+      (sections.message && sections.message.story) ||
+      (contentSections.message && contentSections.message.story) ||
+      {};
+
+    if (node.feedback) out.push(node.feedback);
+    if (contentStory.feedback) out.push(contentStory.feedback);
+    if (messageStory.feedback) out.push(messageStory.feedback);
+    return out;
+  }
+
   function collectStoryNodes(value, out, depth) {
     if (!value || typeof value !== 'object' || depth > 30) return;
 
@@ -698,10 +864,7 @@
 
     var media = unique(imagesFromAttachments(attachments)).slice(0, 5).join(' | ');
 
-    var feedbacks = [];
-    if (node.feedback) feedbacks.push(node.feedback);
-    if (contentStory.feedback) feedbacks.push(contentStory.feedback);
-    if (messageStory.feedback) feedbacks.push(messageStory.feedback);
+    var feedbacks = storyFeedbacks(node);
     var stats = postStats(feedbacks);
 
     var id = node.post_id ? String(node.post_id) : String(node.id || link);
@@ -719,7 +882,8 @@
       stats[0],
       stats[1],
       stats[2],
-      stats[3]
+      stats[3],
+      ''
     ];
   }
 
@@ -737,6 +901,12 @@
         if (window.__fbPostIds[row[0]]) continue;
         window.__fbPostIds[row[0]] = true;
         window.__fbPosts.push(row);
+
+        var feedbacks = storyFeedbacks(nodes[j]);
+        for (var k = 0; k < feedbacks.length; k++) {
+          registerFeedbackTarget(feedbacks[k], 'post', row);
+        }
+
         added++;
       }
     }
@@ -849,12 +1019,15 @@
       postId,
       '',
       '',
+      '',
+      '',
       authorName,
       authorLink,
       text,
       formatDate(comment.created_time),
       reactions,
-      permalink
+      permalink,
+      ''
     ];
   }
 
@@ -870,6 +1043,7 @@
         var row = commentToRow(nodes[j]);
         if (!row) continue;
         window.__fbComments.push(row);
+        registerFeedbackTarget(nodes[j].feedback, 'comment', row);
         added++;
       }
     }
@@ -888,6 +1062,8 @@
       if (!post) continue;
       if (!row[2]) row[2] = post[4] || '';
       if (!row[3]) row[3] = post[5] || '';
+      if (!row[4]) row[4] = post[2] || '';
+      if (!row[5]) row[5] = post[3] || '';
     }
     return rows;
   }
@@ -925,6 +1101,12 @@
           text.indexOf('"legacy_fbid"') !== -1 ||
           text.indexOf('CommentsListComponentsPaginationQuery') !== -1) {
         parseComments(text);
+      }
+    } catch (e) { /* см. выше */ }
+
+    try {
+      if (text.indexOf('"reactors"') !== -1 && text.indexOf('"__typename":"User"') !== -1) {
+        parseReactions(text);
       }
     } catch (e) { /* см. выше */ }
 
@@ -1235,14 +1417,20 @@
     return refreshCommentRows();
   };
 
+  window.__fbsoftHideOverlay = function () {
+    if (state.box) state.box.style.display = 'none';
+  };
+
   window.__fbsoftReset = function (kind) {
     if (kind === 'posts') {
       window.__fbPosts = [POST_HEADERS.slice()];
       window.__fbPostIds = Object.create(null);
       window.__fbProfile = [];
+      clearReactions('post');
     } else if (kind === 'comments') {
       window.__fbComments = [COMMENT_HEADERS.slice()];
       window.__fbCommentIds = Object.create(null);
+      clearReactions('comment');
     } else {
       window.__fbMembers = [MEMBER_HEADERS.slice()];
       window.__fbMemberIds = Object.create(null);
