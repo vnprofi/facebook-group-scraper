@@ -63,6 +63,8 @@
 
   // Индексы служебных колонок в строках таблиц.
   var POST_REACTION_COUNT_COLUMN = 7;
+  var POST_REACTION_TYPES_COLUMN = 8;
+  var POST_COMMENT_COUNT_COLUMN = 9;
   var POST_REACTORS_COLUMN = POST_HEADERS.length - 1;
   var COMMENT_REACTION_COUNT_COLUMN = 10;
   var COMMENT_REACTORS_COLUMN = COMMENT_HEADERS.length - 1;
@@ -682,14 +684,17 @@
     return raw;
   }
 
-  function hasReactorNodes(value) {
-    return !!(
-      value &&
-      typeof value === 'object' &&
-      value.reactors &&
-      typeof value.reactors === 'object' &&
-      Array.isArray(value.reactors.nodes)
-    );
+  // У feedback-узла есть хоть какие-то счётчики реакций. Подсказка при
+  // наведении присылает только top_reactions.summary, без reactors.nodes,
+  // поэтому проверяем все варианты, а не только полный список.
+  function hasReactionStats(value) {
+    if (!value || typeof value !== 'object') return false;
+    if (value.reactors && typeof value.reactors === 'object') return true;
+    if (value.unified_reactors && typeof value.unified_reactors === 'object') return true;
+    if (value.total_reaction_count && typeof value.total_reaction_count === 'object') return true;
+    if (value.top_reactions && typeof value.top_reactions === 'object') return true;
+    if (value.comment_rendering_instance_for_feed_location) return true;
+    return false;
   }
 
   function collectFeedbackNodes(value, out, depth) {
@@ -700,7 +705,7 @@
       return;
     }
 
-    if (looksLikeFeedbackId(value.id) && hasReactorNodes(value)) out.push(value);
+    if (looksLikeFeedbackId(value.id) && hasReactionStats(value)) out.push(value);
 
     for (var key in value) {
       if (!Object.prototype.hasOwnProperty.call(value, key)) continue;
@@ -731,7 +736,26 @@
       if (!target.row[POST_REACTION_COUNT_COLUMN] && entry.total) {
         target.row[POST_REACTION_COUNT_COLUMN] = entry.total;
       }
+      if (!target.row[POST_REACTION_TYPES_COLUMN] && entry.breakdown) {
+        target.row[POST_REACTION_TYPES_COLUMN] = entry.breakdown;
+      }
+      if (!target.row[POST_COMMENT_COUNT_COLUMN] && entry.comments) {
+        target.row[POST_COMMENT_COUNT_COLUMN] = entry.comments;
+      }
     }
+  }
+
+  function addUserNode(entry, node) {
+    if (!node || node.__typename !== 'User') return;
+
+    var id = node.id ? String(node.id) : '';
+    var name = cleanText(node.name);
+    if (!id && !name) return;
+
+    var dedupe = id || name;
+    if (entry.seen[dedupe]) return;
+    entry.seen[dedupe] = true;
+    entry.names.push(name ? (id ? name + ' (' + id + ')' : name) : id);
   }
 
   function addReactionUsers(feedback) {
@@ -740,26 +764,47 @@
     var key = feedbackKey(feedback.id);
     var entry = window.__fbReactions[key];
     if (!entry) {
-      entry = window.__fbReactions[key] = { seen: Object.create(null), names: [], total: '' };
+      entry = window.__fbReactions[key] = {
+        seen: Object.create(null),
+        names: [],
+        total: '',
+        breakdown: '',
+        comments: ''
+      };
     }
 
-    var nodes = feedback.reactors.nodes || [];
-    for (var i = 0; i < nodes.length; i++) {
-      var node = nodes[i] || {};
-      if (node.__typename !== 'User') continue;
+    var nodes = (feedback.reactors && Array.isArray(feedback.reactors.nodes)) ? feedback.reactors.nodes : [];
+    for (var i = 0; i < nodes.length; i++) addUserNode(entry, nodes[i]);
 
-      var id = node.id ? String(node.id) : '';
-      var name = cleanText(node.name);
-      if (!id && !name) continue;
-
-      var dedupe = id || name;
-      if (entry.seen[dedupe]) continue;
-      entry.seen[dedupe] = true;
-      entry.names.push(name ? (id ? name + ' (' + id + ')' : name) : id);
+    // Подсказка при наведении: в каждом summary-элементе лежат несколько
+    // первых «интересных» реакторов, по ним и набирается список.
+    var top = feedback.top_reactions;
+    var items = top && Array.isArray(top.summary) ? top.summary
+      : top && Array.isArray(top.edges) ? top.edges
+        : [];
+    for (var j = 0; j < items.length; j++) {
+      var item = items[j] || {};
+      if (Array.isArray(item.interesting_reactors)) {
+        for (var k = 0; k < item.interesting_reactors.length; k++) addUserNode(entry, item.interesting_reactors[k]);
+      }
+      if (Array.isArray(item.reactors)) {
+        for (var m = 0; m < item.reactors.length; m++) addUserNode(entry, item.reactors[m]);
+      }
     }
 
     entry.total =
-      countText(feedback.total_reaction_count) || countText(feedback.reactors) || entry.total;
+      countText(feedback.total_reaction_count) ||
+      countText(feedback.reactors) ||
+      countText(feedback.unified_reactors) ||
+      countText(feedback.reaction_count) ||
+      entry.total;
+
+    if (!entry.breakdown) entry.breakdown = reactionBreakdown(feedback);
+
+    if (!entry.comments) {
+      var rendering = feedback.comment_rendering_instance_for_feed_location;
+      entry.comments = countText(rendering && rendering.comments);
+    }
 
     applyReactionTarget(key);
   }
@@ -1105,7 +1150,10 @@
     } catch (e) { /* см. выше */ }
 
     try {
-      if (text.indexOf('"reactors"') !== -1 && text.indexOf('"__typename":"User"') !== -1) {
+      if (text.indexOf('"top_reactions"') !== -1 ||
+          text.indexOf('"reactors"') !== -1 ||
+          text.indexOf('"unified_reactors"') !== -1 ||
+          text.indexOf('"comment_rendering_instance_for_feed_location"') !== -1) {
         parseReactions(text);
       }
     } catch (e) { /* см. выше */ }
