@@ -41,7 +41,6 @@
     'Реакции',
     'Реакции (по типам)',
     'Комментарии',
-    'Репосты',
     'Кто отреагировал'
   ];
 
@@ -576,7 +575,7 @@
   }
 
   // ---------------------------------------------------------------------
-  // Счётчики реакций, комментариев и репостов
+  // Счётчики реакций и комментариев
   // ---------------------------------------------------------------------
 
   function countText(value) {
@@ -618,11 +617,19 @@
     return parts.join(' · ');
   }
 
+  // В comments лежат и загруженная порция (count), и общее число
+  // (total_count). Для таблицы нужно именно общее.
+  function feedbackCommentsCount(feedback) {
+    var rendering = feedback && feedback.comment_rendering_instance_for_feed_location;
+    var comments = rendering && rendering.comments;
+    if (!comments || typeof comments !== 'object') return '';
+    return countText(comments.total_count) || countText(comments);
+  }
+
   function postStats(feedbacks) {
     var reactions = '';
     var breakdown = '';
     var comments = '';
-    var shares = '';
 
     for (var i = 0; i < feedbacks.length; i++) {
       var feedback = feedbacks[i];
@@ -637,23 +644,15 @@
       if (!breakdown) breakdown = reactionBreakdown(feedback);
 
       if (!comments) {
-        var rendering = feedback.comment_rendering_instance_for_feed_location;
-        comments = countText(rendering && rendering.comments);
+        comments = feedbackCommentsCount(feedback);
         if (!comments) comments = countText(feedback.total_comment_count);
         if (!comments) comments = countText(feedback.comment_count);
       }
 
-      if (!shares) {
-        shares =
-          countText(feedback.share_count) ||
-          countText(feedback.reshares) ||
-          countText(feedback.reshare_count);
-      }
-
-      if (reactions && breakdown && comments && shares) break;
+      if (reactions && breakdown && comments) break;
     }
 
-    return [reactions, breakdown, comments, shares];
+    return [reactions, breakdown, comments];
   }
 
   // ---------------------------------------------------------------------
@@ -776,6 +775,14 @@
     var nodes = (feedback.reactors && Array.isArray(feedback.reactors.nodes)) ? feedback.reactors.nodes : [];
     for (var i = 0; i < nodes.length; i++) addUserNode(entry, nodes[i]);
 
+    // Список реакторов из карточки/диалога «Все реакции» приходит
+    // в reactors.edges, а не reactors.nodes.
+    var edges = (feedback.reactors && Array.isArray(feedback.reactors.edges)) ? feedback.reactors.edges : [];
+    for (var e = 0; e < edges.length; e++) {
+      var edge = edges[e] || {};
+      addUserNode(entry, edge.node);
+    }
+
     // Подсказка при наведении: в каждом summary-элементе лежат несколько
     // первых «интересных» реакторов, по ним и набирается список.
     var top = feedback.top_reactions;
@@ -801,10 +808,7 @@
 
     if (!entry.breakdown) entry.breakdown = reactionBreakdown(feedback);
 
-    if (!entry.comments) {
-      var rendering = feedback.comment_rendering_instance_for_feed_location;
-      entry.comments = countText(rendering && rendering.comments);
-    }
+    if (!entry.comments) entry.comments = feedbackCommentsCount(feedback);
 
     applyReactionTarget(key);
   }
@@ -927,7 +931,6 @@
       stats[0],
       stats[1],
       stats[2],
-      stats[3],
       ''
     ];
   }
