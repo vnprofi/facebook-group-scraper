@@ -95,7 +95,8 @@ ipcMain.handle('save-csv', async (event, payload = {}) => {
 
 ipcMain.handle('save-excel', async (event, payload = {}) => {
   try {
-    const rows = Array.isArray(payload.rows) ? payload.rows : [];
+    const table = Array.isArray(payload.rows) ? payload.rows : [];
+    const profile = Array.isArray(payload.profile) ? payload.profile : [];
     const { filePath } = await dialog.showSaveDialog(mainWindow, {
       defaultPath: payload.filename || defaultFileName(payload.kind, 'xlsx'),
       filters: [{ name: 'Excel', extensions: ['xlsx'] }]
@@ -103,20 +104,36 @@ ipcMain.handle('save-excel', async (event, payload = {}) => {
 
     if (!filePath) return { success: false, cancelled: true };
 
+    // Шапка профиля: у каждого профиля свой набор полей, поэтому
+    // блок строится из пар «поле — значение», а не из фиксированных колонок.
+    const meta = [];
+    for (const pair of profile) {
+      if (!Array.isArray(pair) || pair.length < 2) continue;
+      const key = pair[0] == null ? '' : String(pair[0]).trim();
+      const value = pair[1] == null ? '' : String(pair[1]).trim();
+      if (!key || !value) continue;
+      meta.push([key, value.replace(/\s*\r?\n+\s*/g, ' · ')]);
+    }
+
+    const rows = meta.length
+      ? [['Информация о профиле'], ...meta, [], ...table]
+      : table;
+
     const workbook = XLSX.utils.book_new();
     const sheet = XLSX.utils.aoa_to_sheet(rows);
 
-    // Ширина колонок по содержимому (с разумными ограничениями).
-    sheet['!cols'] = (rows[0] || []).map((header, index) => {
+    // Ширину колонок считаем только по таблице, чтобы шапка её не раздувала.
+    sheet['!cols'] = (table[0] || []).map((header, index) => {
       let width = String(header || '').length + 4;
-      for (let i = 1; i < Math.min(rows.length, 200); i++) {
-        const cell = rows[i] && rows[i][index];
+      for (let i = 1; i < Math.min(table.length, 200); i++) {
+        const cell = table[i] && table[i][index];
         if (cell != null) width = Math.max(width, String(cell).length + 2);
       }
       return { wch: Math.min(60, Math.max(12, width)) };
     });
 
-    XLSX.utils.book_append_sheet(workbook, sheet, 'Data');
+    const sheetName = payload.kind === 'posts' ? 'Посты' : 'Участники';
+    XLSX.utils.book_append_sheet(workbook, sheet, sheetName);
     XLSX.writeFile(workbook, filePath);
 
     return { success: true, path: filePath };
