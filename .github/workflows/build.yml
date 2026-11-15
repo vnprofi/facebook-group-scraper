@@ -1,14 +1,19 @@
-name: Build Electron App
+name: Build desktop apps
 
 on:
   push:
+    tags:
+      - 'v*'
     branches:
       - main
-      - cursor/integrate-facebook-group-member-parser-c4d9
   pull_request:
     branches:
       - main
   workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-win:
@@ -20,13 +25,14 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
+          cache: npm
 
       - name: Install dependencies
-        run: npm install --legacy-peer-deps --production=false
+        run: npm install --legacy-peer-deps
 
-      - name: Build Windows
-        run: npx electron-builder --win --publish never
+      - name: Build Windows (x64)
+        run: npx electron-builder --win --x64 --publish never
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
@@ -34,11 +40,13 @@ jobs:
           name: windows-build
           path: |
             dist/*.exe
-            dist/*.nsis.7z
-          if-no-files-found: ignore
+            dist/*.blockmap
+          if-no-files-found: warn
 
   build-mac:
     runs-on: macos-latest
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: false
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -46,15 +54,14 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
+          cache: npm
 
       - name: Install dependencies
         run: npm install
 
-      - name: Build macOS (unsigned)
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: false
-        run: npx electron-builder --mac --publish never
+      - name: Build macOS (x64 + arm64, unsigned)
+        run: npx electron-builder --mac --x64 --arm64 --publish never
 
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
@@ -63,4 +70,4 @@ jobs:
           path: |
             dist/*.dmg
             dist/*.zip
-          if-no-files-found: ignore
+          if-no-files-found: warn
